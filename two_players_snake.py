@@ -14,14 +14,20 @@ Snake 1 (arrow keys, right-hand side)
 
 Snake 2 (W A S D, left-hand side) and its special moves
     W A S D ...... steer
-    C ............ freeze snake 1 for a moment
+    C ............ freeze snake 1 for a moment            (6 s cooldown)
     H (hold) ..... turn invisible
     O (hold) ..... disguise the apple as an orange
-    L ............ surround the apple with 8 lollies (each one = +1 length)
-    Z ............ reverse snake 2
-    E (hold) ..... "enhance": golden ghost mode, no collisions, can escape the window
+    L ............ surround the apple with 8 lollies       (10 s cooldown)
+    Z ............ reverse snake 2                         (3 s cooldown)
+    E (hold) ..... golden ghost mode: no collisions, can escape the window.
+                   Uses an energy bar that drains while held and recharges
+                   when released. If it runs out inside a wall, you're toast.
 
+P ................ pause / resume (also pauses if the window loses focus)
 Shift ............ restart
+
+Turns are buffered: you can press two direction keys quickly within one
+step and both will be used, in order.
 Aim / Shortest time buttons on the left, as in the original.
 """
 
@@ -39,6 +45,15 @@ PANEL_W = WIDTH // 4          # scoreboard panel on the left
 NUM_SQ = HEIGHT // SQ
 WIN_SCORE = 40                # both snakes must be longer than this to pass
 MAX_LEN = 2500
+
+# special-move balancing (frames)
+FREEZE_CD = 6 * FPS
+LOLLY_CD = 10 * FPS
+REVERSE_CD = 3 * FPS
+ENERGY_MAX = 6 * FPS          # seconds of ghost mode on a full bar
+ENERGY_MIN = FPS              # need at least 1 s of energy to switch it on
+ENERGY_REGEN = 0.5            # per frame while not in ghost mode (12 s to refill)
+MAX_QUEUED_TURNS = 2
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BEST_TIME_FILE = os.path.join(BASE_DIR, "shortest_time.txt")
@@ -79,6 +94,7 @@ class Game:
         self.held = set()            # keys currently held down
         self.hide = False
         self.enhance = False
+        self.paused = False
         self.restart()
 
     # ------------------------------------------------------------ resources
@@ -118,7 +134,11 @@ class Game:
     # -------------------------------------------------------------- restart
     def restart(self):
         self.stopgame = False
+        self.paused = False
         self.passed = 0              # 1 = passed, 2 = escaped, 0 = game over
+        self.cd_freeze = self.cd_lolly = self.cd_reverse = 0
+        self.energy = ENERGY_MAX
+        self.turns1, self.turns2 = [], []   # buffered direction changes
         self.time = 0
         self.cooling = False
         self.cool_start = 0
@@ -180,6 +200,7 @@ class Game:
     def update(self):
         """One display frame of game logic (the original draw() loop)."""
         self.time += 1
+        self.tick_abilities()
         self.speed_adjust()
         self.cooling_check()
         if self.time % self.speed == 0:
@@ -187,6 +208,19 @@ class Game:
             self.larger_step()
             self.eat_apple()
             self.check_dead()
+
+    def tick_abilities(self):
+        self.cd_freeze = max(0, self.cd_freeze - 1)
+        self.cd_lolly = max(0, self.cd_lolly - 1)
+        self.cd_reverse = max(0, self.cd_reverse - 1)
+        if self.enhance:
+            self.energy -= 1
+            if self.energy <= 0:                 # ghost mode runs dry
+                self.energy = 0
+                self.enhance = False
+                self.colorL = PINK
+        else:
+            self.energy = min(ENERGY_MAX, self.energy + ENERGY_REGEN)
 
     def speed_adjust(self):
         if self.colours == 0:
@@ -202,6 +236,8 @@ class Game:
 
     def travel(self):
         if not self.s1dead and not self.cooling and self.time % self.speed1 == 0:
+            if self.turns1:
+                self.angle1 = self.turns1.pop(0)
             for i in range(self.s1size, 0, -1):
                 if i != 1:
                     self.h1x[i] = self.h1x[i - 1]
@@ -212,6 +248,8 @@ class Game:
                     self.h1y[1] += dy * SQ
 
         if not self.s2dead and self.time % self.speed2 == 0:
+            if self.turns2:
+                self.angle2 = self.turns2.pop(0)
             for i in range(self.s2size, 0, -1):
                 if i != 1:
                     self.h2x[i] = self.h2x[i - 1]
@@ -341,6 +379,11 @@ class Game:
             self.on_keyup(event.key)
             return
 
+        if event.type == getattr(pygame, "WINDOWFOCUSLOST", -1):
+            if not self.stopgame:
+                self.paused = True
+            return
+
         if self.popup:                                   # dialog is modal
             if (event.type == pygame.KEYDOWN and
                     event.key in (pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_SPACE)):
@@ -360,27 +403,52 @@ class Game:
                        else f"{self.best_time} seconds")
                 self.popup = ("Shortest time", msg)
 
+    def queue_turn(self, snake, new):
+        """Buffer a direction change (up to MAX_QUEUED_TURNS ahead)."""
+        q = self.turns1 if snake == 1 else self.turns2
+        cur = q[-1] if q else (self.angle1 if snake == 1 else self.angle2)
+        if new == cur or new == (cur + 180) % 360:
+            return
+        if not q:                                   # don't turn into our own neck
+            hx, hy, nx, ny = ((self.h1x[1], self.h1y[1], self.h1x[2], self.h1y[2]) if snake == 1
+                              else (self.h2x[1], self.h2y[1], self.h2x[2], self.h2y[2]))
+            dx, dy = DIRS[new]
+            if (dx and hx + dx * SQ == nx) or (dy and hy + dy * SQ == ny):
+                return
+        if len(q) < MAX_QUEUED_TURNS:
+            q.append(new)
+
     def on_keydown(self, key):
+        if key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
+            self.held.add(key)
+            self.restart()
+            return
+
         self.held.add(key)
         if key in JOHN_KEYS:
             self.john_seen.add(key)
 
-        h1x, h1y, h2x, h2y = self.h1x, self.h1y, self.h2x, self.h2y
+        if key == pygame.K_p and not self.stopgame:
+            self.paused = not self.paused
+            return
+        if self.paused:
+            return
 
         # ---- snake 1
         if not self.s1dead:
-            if key == pygame.K_UP and self.angle1 != 270 and (h1y[1] - SQ) != h1y[2]:
-                self.angle1 = 90
-            if key == pygame.K_DOWN and self.angle1 != 90 and (h1y[1] + SQ) != h1y[2]:
-                self.angle1 = 270
-            if key == pygame.K_LEFT and self.angle1 != 0 and (h1x[1] - SQ) != h1x[2]:
-                self.angle1 = 180
-            if key == pygame.K_RIGHT and self.angle1 != 180 and (h1x[1] + SQ) != h1x[2]:
-                self.angle1 = 0
+            if key == pygame.K_UP:
+                self.queue_turn(1, 90)
+            if key == pygame.K_DOWN:
+                self.queue_turn(1, 270)
+            if key == pygame.K_LEFT:
+                self.queue_turn(1, 180)
+            if key == pygame.K_RIGHT:
+                self.queue_turn(1, 0)
 
-            if key == pygame.K_c and not self.s2dead:
+            if key == pygame.K_c and not self.s2dead and self.cd_freeze == 0:
                 self.cooling = True
                 self.cool_start = self.time
+                self.cd_freeze = FREEZE_CD
             if key == pygame.K_3:
                 self.colorR, self.colours = RED_MODE, 0
             if key == pygame.K_1:
@@ -390,39 +458,39 @@ class Game:
 
         # ---- snake 2
         if not self.s2dead:
-            if key == pygame.K_w and self.angle2 != 270 and (h2y[1] - SQ) != h2y[2]:
-                self.angle2 = 90
-            if key == pygame.K_s and self.angle2 != 90 and (h2y[1] + SQ) != h2y[2]:
-                self.angle2 = 270
-            if key == pygame.K_a and self.angle2 != 0 and (h2x[1] - SQ) != h2x[2]:
-                self.angle2 = 180
-            if key == pygame.K_d and self.angle2 != 180 and (h2x[1] + SQ) != h2x[2]:
-                self.angle2 = 0
+            if key == pygame.K_w:
+                self.queue_turn(2, 90)
+            if key == pygame.K_s:
+                self.queue_turn(2, 270)
+            if key == pygame.K_a:
+                self.queue_turn(2, 180)
+            if key == pygame.K_d:
+                self.queue_turn(2, 0)
 
             if key == pygame.K_h:
                 self.hide = True
             if key == pygame.K_o:
                 self.orange = True
-            if key == pygame.K_e:
+            if key == pygame.K_e and self.energy >= ENERGY_MIN:
                 self.enhance = True
                 self.colorL = GOLD
-            if key == pygame.K_l:
+            if key == pygame.K_l and self.cd_lolly == 0:
                 if (not self.larger and self.applex < WIDTH - 2 * SQ
                         and self.appley < HEIGHT - 2 * SQ
                         and self.applex > PANEL_W + SQ and self.appley > SQ):
                     self.larger = True
                     self.ring = [True] * 8
-            if key == pygame.K_z and not self.zigzag:
+                    self.cd_lolly = LOLLY_CD
+            if key == pygame.K_z and not self.zigzag and self.cd_reverse == 0:
                 self.reverse_snake2()
-
-        if key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
-            self.restart()
+                self.cd_reverse = REVERSE_CD
 
     def reverse_snake2(self):
         """Z: turn snake 2 around so its tail becomes its head."""
         n = self.s2size
         h2x, h2y = self.h2x, self.h2y
         self.zigzag = True
+        self.turns2.clear()
         if h2x[n] == h2x[n - 1]:
             self.angle2 = 270 if h2y[n] > h2y[n - 1] else 90
         else:
@@ -472,6 +540,34 @@ class Game:
             colour = ICE if frozen else (LIME if i == 1 else body_colour)
             self.cell(x, y, colour)
 
+    def draw_bar(self, y, label, frac, colour):
+        r = pygame.Rect(10, y, PANEL_W - 20, 14)
+        pygame.draw.rect(self.screen, (225, 225, 225), r, border_radius=4)
+        if frac > 0:
+            pygame.draw.rect(self.screen, colour, (r.x, r.y, int(r.w * frac), r.h), border_radius=4)
+        pygame.draw.rect(self.screen, (141, 141, 141), r, 1, border_radius=4)
+        self.text(label, 11, BLACK, r.centerx, r.centery)
+
+    def draw_abilities(self):
+        ready, charging = (120, 210, 100), (150, 180, 220)
+
+        def cd_bar(y, name, cd, total):
+            secs = -(-cd // FPS)
+            self.draw_bar(y, name if cd == 0 else f"{name}  {secs}s",
+                          1 - cd / total, ready if cd == 0 else charging)
+
+        cd_bar(442, "C  Freeze", self.cd_freeze, FREEZE_CD)
+        cd_bar(460, "L  Lollies", self.cd_lolly, LOLLY_CD)
+        cd_bar(478, "Z  Reverse", self.cd_reverse, REVERSE_CD)
+        self.draw_bar(496, "E  Ghost", self.energy / ENERGY_MAX, GOLD)
+
+    def draw_paused(self):
+        dim = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 110))
+        self.screen.blit(dim, (0, 0))
+        self.text("PAUSED", 48, WHITE, WIDTH // 2, HEIGHT // 2 - 20)
+        self.text("Press P to resume", 20, WHITE, WIDTH // 2, HEIGHT // 2 + 25)
+
     def draw_board(self):
         self.screen.fill(WHITE)
 
@@ -481,6 +577,9 @@ class Game:
         self.text(f"snake 2\n{self.s2size - 1}", 25, LIME, PANEL_W // 2, HEIGHT * 5 // 8)
         if self.s1size - 1 == 7 and self.s2size - 1 == 7:
             self.text("Congratulations on\nyour special day!", 12, LIME, PANEL_W // 2, 40)
+
+        if not self.s2dead:
+            self.draw_abilities()
 
         # buttons
         for rect, label in ((self.best_button, "Shortest time"), (self.aim_button, "Aim")):
@@ -580,13 +679,15 @@ class Game:
 
         if self.popup:
             self.draw_popup()
+        elif self.paused:
+            self.draw_paused()
 
     # ------------------------------------------------------------ main loop
     def run(self):
         while True:
             for event in pygame.event.get():
                 self.handle_event(event)
-            if not self.popup and not self.stopgame:
+            if not self.popup and not self.stopgame and not self.paused:
                 self.update()
             self.draw()
             pygame.display.flip()
