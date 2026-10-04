@@ -14,12 +14,12 @@ Snake 1 (arrow keys, right-hand side)
 
 Snake 2 (W A S D, left-hand side) and its special moves
     W A S D ...... steer
-    C ............ freeze snake 1 for a moment            (6 s cooldown)
+    F ............ freeze snake 1 for a moment            (6 s cooldown)
     H (hold) ..... turn invisible
-    O (hold) ..... disguise the apple as an orange
+    O (hold) ..... disguise the apple as an orange      (5 s energy bar)
     L ............ surround the apple with 8 lollies       (10 s cooldown)
-    Z ............ reverse snake 2                         (3 s cooldown)
-    E (hold) ..... golden ghost mode: no collisions, can escape the window.
+    R ............ reverse snake 2                         (3 s cooldown)
+    G (hold) ..... golden ghost mode: no collisions, can escape the window.
                    Uses an energy bar that drains while held and recharges
                    when released. If it runs out inside a wall, you're toast.
 
@@ -53,6 +53,9 @@ REVERSE_CD = 3 * FPS
 ENERGY_MAX = 6 * FPS          # seconds of ghost mode on a full bar
 ENERGY_MIN = FPS              # need at least 1 s of energy to switch it on
 ENERGY_REGEN = 0.5            # per frame while not in ghost mode (12 s to refill)
+ORANGE_MAX = 5 * FPS          # seconds of apple disguise on a full bar
+ORANGE_MIN = FPS // 2
+ORANGE_REGEN = 0.5            # per frame while not disguised (10 s to refill)
 MAX_QUEUED_TURNS = 2
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,7 +75,7 @@ BLUE_MODE = (70, 130, 180)    # snake 1 body (mode 1)
 # Processing used angles: 0 = right, 90 = up, 180 = left, 270 = down
 DIRS = {0: (1, 0), 90: (0, -1), 180: (-1, 0), 270: (0, 1)}
 
-CHLOE_KEYS = {pygame.K_c, pygame.K_h, pygame.K_l, pygame.K_o, pygame.K_e}
+CHLOE_KEYS = {pygame.K_f, pygame.K_h, pygame.K_l, pygame.K_o, pygame.K_g}  # all special moves at once
 JOHN_KEYS = {pygame.K_j, pygame.K_o, pygame.K_h, pygame.K_n,
              pygame.K_3, pygame.K_1, pygame.K_6}
 
@@ -138,6 +141,7 @@ class Game:
         self.passed = 0              # 1 = passed, 2 = escaped, 0 = game over
         self.cd_freeze = self.cd_lolly = self.cd_reverse = 0
         self.energy = ENERGY_MAX
+        self.orange_energy = ORANGE_MAX
         self.turns1, self.turns2 = [], []   # buffered direction changes
         self.time = 0
         self.cooling = False
@@ -221,6 +225,13 @@ class Game:
                 self.colorL = PINK
         else:
             self.energy = min(ENERGY_MAX, self.energy + ENERGY_REGEN)
+        if self.orange:
+            self.orange_energy -= 1
+            if self.orange_energy <= 0:              # disguise runs out
+                self.orange_energy = 0
+                self.orange = False
+        else:
+            self.orange_energy = min(ORANGE_MAX, self.orange_energy + ORANGE_REGEN)
 
     def speed_adjust(self):
         if self.colours == 0:
@@ -445,7 +456,7 @@ class Game:
             if key == pygame.K_RIGHT:
                 self.queue_turn(1, 0)
 
-            if key == pygame.K_c and not self.s2dead and self.cd_freeze == 0:
+            if key == pygame.K_f and not self.s2dead and self.cd_freeze == 0:
                 self.cooling = True
                 self.cool_start = self.time
                 self.cd_freeze = FREEZE_CD
@@ -469,9 +480,9 @@ class Game:
 
             if key == pygame.K_h:
                 self.hide = True
-            if key == pygame.K_o:
+            if key == pygame.K_o and self.orange_energy >= ORANGE_MIN:
                 self.orange = True
-            if key == pygame.K_e and self.energy >= ENERGY_MIN:
+            if key == pygame.K_g and self.energy >= ENERGY_MIN:
                 self.enhance = True
                 self.colorL = GOLD
             if key == pygame.K_l and self.cd_lolly == 0:
@@ -481,7 +492,7 @@ class Game:
                     self.larger = True
                     self.ring = [True] * 8
                     self.cd_lolly = LOLLY_CD
-            if key == pygame.K_z and not self.zigzag and self.cd_reverse == 0:
+            if key == pygame.K_r and not self.zigzag and self.cd_reverse == 0:
                 self.reverse_snake2()
                 self.cd_reverse = REVERSE_CD
 
@@ -506,10 +517,10 @@ class Game:
             self.hide = False
         if key == pygame.K_o:
             self.orange = False
-        if key == pygame.K_e:
+        if key == pygame.K_g:
             self.enhance = False
             self.colorL = PINK
-        if key == pygame.K_z:
+        if key == pygame.K_r:
             self.zigzag = False
 
     # ------------------------------------------------------------- drawing
@@ -541,7 +552,7 @@ class Game:
             self.cell(x, y, colour)
 
     def draw_bar(self, y, label, frac, colour):
-        r = pygame.Rect(10, y, PANEL_W - 20, 14)
+        r = pygame.Rect(10, y, PANEL_W - 20, 13)
         pygame.draw.rect(self.screen, (225, 225, 225), r, border_radius=4)
         if frac > 0:
             pygame.draw.rect(self.screen, colour, (r.x, r.y, int(r.w * frac), r.h), border_radius=4)
@@ -556,10 +567,11 @@ class Game:
             self.draw_bar(y, name if cd == 0 else f"{name}  {secs}s",
                           1 - cd / total, ready if cd == 0 else charging)
 
-        cd_bar(442, "C  Freeze", self.cd_freeze, FREEZE_CD)
-        cd_bar(460, "L  Lollies", self.cd_lolly, LOLLY_CD)
-        cd_bar(478, "Z  Reverse", self.cd_reverse, REVERSE_CD)
-        self.draw_bar(496, "E  Ghost", self.energy / ENERGY_MAX, GOLD)
+        cd_bar(435, "F  Freeze", self.cd_freeze, FREEZE_CD)
+        cd_bar(450, "L  Lollies", self.cd_lolly, LOLLY_CD)
+        cd_bar(465, "R  Reverse", self.cd_reverse, REVERSE_CD)
+        self.draw_bar(480, "G  Ghost", self.energy / ENERGY_MAX, GOLD)
+        self.draw_bar(495, "O  Orange", self.orange_energy / ORANGE_MAX, (255, 165, 0))
 
     def draw_paused(self):
         dim = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
