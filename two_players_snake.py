@@ -15,15 +15,15 @@ Snake 1  (W A S D, left side of the keyboard)
     R ............ Reverse snake 1                       (3 s cooldown)
     H (hold) ..... invisible
     O (hold) ..... apple looks like an orange            (5 s energy bar)
-    G (hold) ..... ghost mode: no collisions, can escape through the walls
-                   (escaping only counts after eating half the apple target)
+    G (hold) ..... ghost mode: pass through walls and bodies, nothing can hurt you
                    (6 s energy bar; if it runs out inside a wall, you crash)
 
 Snake 2  (arrow keys, right side of the keyboard)
     Arrows ....... steer
     M ............ Magnet: pull the apple up to 3 squares towards you   (8 s cooldown)
     I ............ Ice: freeze snake 1 for about 1.6 s                 (6 s cooldown)
-    3 / 1 / 6 .... mode: red = slow (and kills snake 1 if it bites you),
+    3 / 1 / 6 .... mode: red = slow but DEADLY (snake 1 dies if it touches you,
+                         body or head-on),
                          blue = fast, purple = normal
 
 P pause (also pauses if the window loses focus)   Shift restart   Esc menu
@@ -31,8 +31,7 @@ P pause (also pauses if the window loses focus)   Shift restart   Esc menu
 Rules
     Single game .. original co-op rules: BOTH snakes must reach the apple target.
     Best of 3/5 .. versus: first snake to reach the target wins the round, a crash
-                   loses it, and Snake 1 escaping wins it (but only once it has eaten half
-                   the apple target). Head-on = longer snake wins.
+                   loses it. Head-on = longer snake wins.
 Turns are buffered: two quick direction presses within one step are both used.
 """
 
@@ -66,7 +65,6 @@ ORANGE_MAX = 5 * FPS          # apple disguise
 ORANGE_MIN = FPS // 2
 ORANGE_REGEN = 0.5
 MAX_QUEUED_TURNS = 2
-ESCAPE_FRACTION = 0.5         # ghost snake must have eaten this share of the target to escape
 
 # menu options
 MODES = ["2 players", "vs computer  (you: Snake 1, WASD)", "vs computer  (you: Snake 2, arrows)"]
@@ -199,9 +197,10 @@ class Game:
         """Reset the board for a new game / new round (match score is kept)."""
         self.stopgame = False
         self.paused = False
-        self.passed = 0              # 0 game over, 1 passed, 2 escaped, 4 round finished
+        self.passed = 0              # 0 game over, 1 passed, 4 round finished
         self.round_winner = None
         self.round_reason = ""
+        self.red_kill = False        # snake 1 died by touching the red snake
         self.new_record = False
         self.time = 0
         self.cooling = False         # snake 1 frozen (by F)
@@ -395,13 +394,6 @@ class Game:
             self.h2x[i] = 0
             self.h2y[i] = 0
 
-    def escape_need(self):
-        """Apples Snake 1 (the ghost-capable WASD snake) needs before escaping counts."""
-        return -(-int(self.win_score * ESCAPE_FRACTION * 100) // 100)
-
-    def can_escape(self):
-        return self.enhance and self.s2size - 1 >= self.escape_need()
-
     def check_dead(self):
         h1x, h1y, h2x, h2y = self.h1x, self.h1y, self.h2x, self.h2y
 
@@ -428,11 +420,18 @@ class Game:
                 self.s2dead = True
                 self.clear2(0)
 
+        if (not self.s1dead and not self.s2dead and not self.enhance and self.colours == 0
+                and h1x[1] == h2x[1] and h1y[1] == h2y[1]):
+            self.s2dead = True                           # head-on with the red snake: it wins
+            self.red_kill = True
+            self.clear2(0)
+
         if not self.s1dead and not self.s2dead and not self.enhance:
             for i in range(2, self.s1size + 1):          # snake 2 head hits snake 1 body
                 if h2x[1] == h1x[i] and h2y[1] == h1y[i]:
                     if self.colours == 0:                # red mode: snake 2 dies
                         self.s2dead = True
+                        self.red_kill = True
                         self.clear2(0)
                     else:
                         self.clear1(i)
@@ -464,15 +463,6 @@ class Game:
             self.stopgame = True
             self.passed = 1
 
-        if self.can_escape():                             # escape check
-            self.stopgame = True
-            self.passed = 2
-            for i in range(1, self.s2size + 1):
-                if -SQ < h2x[i] < WIDTH and -SQ < h2y[i] < HEIGHT:
-                    self.stopgame = False
-                    self.passed = 0
-                    break
-
         if self.stopgame and self.passed == 1:
             self.new_record = self._record_time()
 
@@ -488,15 +478,14 @@ class Game:
         h1x, h1y, h2x, h2y = self.h1x, self.h1y, self.h2x, self.h2y
         ended, winner, reason = False, None, ""
 
-        if self.can_escape() and all(not (-SQ < h2x[i] < WIDTH and -SQ < h2y[i] < HEIGHT)
-                                     for i in range(1, self.s2size + 1)):
-            ended, winner, reason = True, 2, f"{self.name(2)} escaped!"
-        elif self.s1dead and self.s2dead:
+        if self.s1dead and self.s2dead:
             ended, winner, reason = True, self.longer(), "Both snakes crashed"
         elif self.s1dead:
             ended, winner, reason = True, 2, f"{self.name(1)} crashed"
         elif self.s2dead:
-            ended, winner, reason = True, 1, f"{self.name(2)} crashed"
+            ended, winner = True, 1
+            reason = (f"{self.name(2)} touched the red snake" if self.red_kill
+                      else f"{self.name(2)} crashed")
         elif h1x[1] == h2x[1] and h1y[1] == h2y[1] and not self.enhance:
             ended, winner, reason = True, self.longer(), "Head-on collision"
         elif self.s1size > self.win_score or self.s2size > self.win_score:
@@ -971,12 +960,6 @@ class Game:
                   WIDTH // 2, HEIGHT * 3 // 8 + 190)
         self.text("Shift: play again      Esc: menu", 18, (90, 90, 90), WIDTH // 2, HEIGHT - 50)
 
-    def draw_escape_screen(self):
-        self.screen.fill((0, 128, 255))
-        self.text("Congratulations,\nyou escaped\nEnjoy the freedom", 50, GOLD,
-                  WIDTH // 2, HEIGHT // 2)
-        self.text("Shift: play again      Esc: menu", 18, WHITE, WIDTH // 2, HEIGHT - 50)
-
     def draw_game_over(self):
         self.draw_banner([("GAME OVER", 34, BLACK),
                           (f"Score:  {self.s1size + self.s2size - 2} units long in total", 24, BLACK),
@@ -1049,13 +1032,12 @@ class Game:
             vcol = (120, 125, 135) if greyed else (LIME if selected else SOFT)
             self.text_left(f"<  {val}  >" if selected else f"    {val}", 22, vcol, 250, y)
 
-        need = -(-int(WIN_OPTIONS[win] * ESCAPE_FRACTION * 100) // 100)
         if MATCH_OPTIONS[match][1] > 1:
             hint = [f"Versus: first snake to {WIN_OPTIONS[win]} apples wins the round.",
-                    f"A crash loses the round; Snake 1 escaping wins it (needs {need} apples)."]
+                    "A crash loses the round."]
         else:
             hint = [f"Co-op: BOTH snakes must reach {WIN_OPTIONS[win]} apples to pass.",
-                    f"Both crash = game over; Snake 1 escaping wins (needs {need} apples)."]
+                    "Both snakes crash = game over."]
         self.text(hint, 14, SOFT, WIDTH // 2, 300)
 
         cols = [
@@ -1066,12 +1048,12 @@ class Game:
               ("R", "Reverse your snake"),
               ("H", "(hold) invisible"),
               ("O", "(hold) apple looks like an orange"),
-              ("G", "(hold) ghost: pass walls, escape")]),
+              ("G", "(hold) ghost: nothing can hurt you")]),
             (335, "SNAKE 2  -  arrow keys" + ("  (computer)" if mode == 1 else ""), (225, 130, 240),
              [("Arrows", "steer"),
               ("M", "Magnet: pull the apple closer"),
               ("I", "Ice: freeze snake 1 for a moment"),
-              ("3 / 1 / 6", "red slow / blue fast / normal")]),
+              ("3 / 1 / 6", "red: slow, deadly / blue: fast")]),
         ]
         for x, head, col, items in cols:
             self.text_left(head, 16, col, x, 352)
@@ -1092,8 +1074,6 @@ class Game:
 
         if self.stopgame and self.passed == 1:
             self.draw_pass_screen()
-        elif self.stopgame and self.passed == 2:
-            self.draw_escape_screen()
         else:
             self.draw_board()
             if self.stopgame and self.passed == 4:
