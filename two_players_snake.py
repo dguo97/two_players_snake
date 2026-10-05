@@ -501,7 +501,6 @@ class Game:
         self.round_reason = reason
         if winner is not None:
             self.wins[winner - 1] += 1
-            self.round_no += 1
             if self.wins[winner - 1] > self.match_len // 2:
                 self.match_over = True
 
@@ -750,6 +749,8 @@ class Game:
             if self.match_over:
                 self.start_match()                   # rematch, same settings
             else:
+                if self.round_winner is not None:    # a draw replays the same round number
+                    self.round_no += 1
                 self.restart()                       # next round
             return
         if key == pygame.K_ESCAPE:
@@ -898,8 +899,15 @@ class Game:
         pygame.draw.rect(self.screen, PANEL_BG, (0, 0, PANEL_W, HEIGHT))
         mid = PANEL_W // 2
         if self.match_len > 1:
-            self.text(f"BEST OF {self.match_len}  -  ROUND {min(self.round_no, 99)}", 11, SOFT, mid, 16)
-            self.text(f"{self.wins[1]}  :  {self.wins[0]}", 22, WHITE, mid, 40)
+            need = self.match_len // 2 + 1
+            self.text(f"BEST OF {self.match_len}  -  ROUND {self.round_no}", 11, SOFT, mid, 12)
+            snake2_col = (225, 130, 240)
+            self.text(str(self.wins[1]), 26, PINK, 36, 36)         # Snake 1 (WASD) rounds won
+            self.text(":", 24, WHITE, mid, 35)
+            self.text(str(self.wins[0]), 26, snake2_col, 124, 36)  # Snake 2 (arrows) rounds won
+            self.text("SNAKE 1", 9, PINK, 36, 56)
+            self.text("SNAKE 2", 9, snake2_col, 124, 56)
+            self.text(f"first to {need}", 10, SOFT, mid, 72)
         self.text(str(self.time // FPS), 15, (0, 255, 0), mid, 100)
         if self.ai[2]:
             self.text("computer", 11, SOFT, mid, 122)
@@ -908,7 +916,7 @@ class Game:
         self.text(f"snake 1\n{self.s2size - 1}", 25, LIME, mid, HEIGHT // 4)
         self.text(f"snake 2\n{self.s1size - 1}", 25, LIME, mid, HEIGHT * 5 // 8)
         if self.s1size - 1 == 7 and self.s2size - 1 == 7:
-            self.text("Congratulations on\nyour special day!", 12, LIME, mid, 70)
+            self.text("Congratulations on\nyour special day!", 12, LIME, mid, 136)
         self.draw_abilities()
 
         rect = self.aim_button
