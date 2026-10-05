@@ -100,6 +100,8 @@ DIRS = {0: (1, 0), 90: (0, -1), 180: (-1, 0), 270: (0, 1)}
 JOHN_KEYS = {pygame.K_j, pygame.K_o, pygame.K_h, pygame.K_n,
              pygame.K_3, pygame.K_1, pygame.K_6}
 ENTER_KEYS = (pygame.K_RETURN, pygame.K_KP_ENTER)
+# number-pad digits count the same as the top-row digits
+NUMPAD_DIGITS = {getattr(pygame, f"K_KP{n}"): getattr(pygame, f"K_{n}") for n in range(10)}
 
 
 def sign(v):
@@ -673,6 +675,9 @@ class Game:
             pygame.quit()
             sys.exit()
 
+        if event.type in (pygame.KEYDOWN, pygame.KEYUP):
+            event.key = NUMPAD_DIGITS.get(event.key, event.key)
+
         if event.type == pygame.KEYUP:
             self.on_keyup(event.key)
             return
@@ -867,6 +872,16 @@ class Game:
         self.draw_bar(y, name if cd == 0 else f"{name}  {secs}s",
                       1 - cd / total, ready if cd == 0 else charging)
 
+    def draw_modes(self, y):
+        """Speed-mode switches for the arrow snake: keys 1 / 2 / 3, current one lit."""
+        modes = [("1 Slow", 0, RED_MODE), ("2 Normal", 2, PURPLE), ("3 Fast", 1, BLUE_MODE)]
+        for n, (label, mode_id, colour) in enumerate(modes):
+            r = pygame.Rect(10 + n * 48, y, 44, 16)
+            active = self.colours == mode_id
+            pygame.draw.rect(self.screen, colour if active else (52, 58, 70), r, border_radius=4)
+            pygame.draw.rect(self.screen, WHITE if active else (90, 96, 110), r, 1, border_radius=4)
+            self.text(label, 10, WHITE if active else (170, 175, 185), r.centerx, r.centery)
+
     def draw_abilities(self):
         if not self.s2dead:                              # Snake 1 (WASD), top block
             self.cd_bar(200, "F  Freeze", self.cd_freeze, FREEZE_CD)
@@ -877,6 +892,7 @@ class Game:
         if not self.s1dead:                              # Snake 2 (arrows), bottom block
             self.cd_bar(435, "M  Magnet", self.cd_magnet, MAGNET_CD)
             self.cd_bar(450, "I  Ice", self.cd_ice, ICE_CD)
+            self.draw_modes(468)
 
     def draw_panel(self):
         pygame.draw.rect(self.screen, PANEL_BG, (0, 0, PANEL_W, HEIGHT))
