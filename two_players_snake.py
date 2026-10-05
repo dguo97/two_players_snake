@@ -1,34 +1,37 @@
 #!/usr/bin/env python3
 """
-Two Player Snake -- Python / pygame port of two_players_snake.pde
+Two Player Snake  --  Python / pygame port of two_players_snake.pde
 
 Setup:   pip install pygame
 Run:     python two_players_snake.py      (keep lolly.jpg in the same folder)
 
-Snake 1 (arrow keys, right-hand side)
+A start menu lets you pick the mode (2 players or vs the computer), the AI level,
+how many apples win a round, and the match length (single game / best of 3 / 5).
+
+Snake 1  (arrow keys)
     Arrows ....... steer
-    3 / 1 / 6 .... change snake 1's mode:
-                     3 = red, slow, and it wins head-on body hits
-                     1 = blue, fast
-                     6 = purple, normal (default)
+    M ............ Magnet: pull the apple up to 3 squares towards you   (8 s cooldown)
+    I ............ Immune: snake 2 can't bite pieces off you for 3 s    (12 s cooldown)
+    3 / 1 / 6 .... mode: red = slow (and kills snake 2 if it bites you),
+                         blue = fast, purple = normal
 
-Snake 2 (W A S D, left-hand side) and its special moves
+Snake 2  (W A S D)
     W A S D ...... steer
-    F ............ freeze snake 1 for a moment            (6 s cooldown)
-    H (hold) ..... turn invisible
-    O (hold) ..... disguise the apple as an orange      (5 s energy bar)
-    L ............ surround the apple with 8 lollies       (10 s cooldown)
-    R ............ reverse snake 2                         (3 s cooldown)
-    G (hold) ..... golden ghost mode: no collisions, can escape the window.
-                   Uses an energy bar that drains while held and recharges
-                   when released. If it runs out inside a wall, you're toast.
+    F ............ Freeze snake 1                         (6 s cooldown)
+    L ............ ring of 8 lollies round the apple      (10 s cooldown)
+    R ............ Reverse snake 2                       (3 s cooldown)
+    H (hold) ..... invisible
+    O (hold) ..... apple looks like an orange            (5 s energy bar)
+    G (hold) ..... ghost mode: no collisions, can escape through the walls
+                   (6 s energy bar; if it runs out inside a wall, you crash)
 
-P ................ pause / resume (also pauses if the window loses focus)
-Shift ............ restart
+P pause (also pauses if the window loses focus)   Shift restart   Esc menu
 
-Turns are buffered: you can press two direction keys quickly within one
-step and both will be used, in order.
-Aim / Shortest time buttons on the left, as in the original.
+Rules
+    Single game .. original co-op rules: BOTH snakes must reach the apple target.
+    Best of 3/5 .. versus: first snake to reach the target wins the round, a crash
+                   loses it, and Snake 2 escaping wins it. Head-on = longer snake wins.
+Turns are buffered: two quick direction presses within one step are both used.
 """
 
 import os
@@ -43,20 +46,31 @@ SQ = 32                       # size of one grid square
 FPS = 60
 PANEL_W = WIDTH // 4          # scoreboard panel on the left
 NUM_SQ = HEIGHT // SQ
-WIN_SCORE = 40                # both snakes must be longer than this to pass
 MAX_LEN = 2500
+FIELD_CX = (PANEL_W + WIDTH) // 2     # horizontal centre of the playfield
 
 # special-move balancing (frames)
 FREEZE_CD = 6 * FPS
 LOLLY_CD = 10 * FPS
 REVERSE_CD = 3 * FPS
-ENERGY_MAX = 6 * FPS          # seconds of ghost mode on a full bar
-ENERGY_MIN = FPS              # need at least 1 s of energy to switch it on
-ENERGY_REGEN = 0.5            # per frame while not in ghost mode (12 s to refill)
-ORANGE_MAX = 5 * FPS          # seconds of apple disguise on a full bar
+MAGNET_CD = 8 * FPS
+MAGNET_CELLS = 3
+IMMUNE_DUR = 3 * FPS
+IMMUNE_CD = 12 * FPS
+ENERGY_MAX = 6 * FPS          # ghost mode
+ENERGY_MIN = FPS
+ENERGY_REGEN = 0.5
+ORANGE_MAX = 5 * FPS          # apple disguise
 ORANGE_MIN = FPS // 2
-ORANGE_REGEN = 0.5            # per frame while not disguised (10 s to refill)
+ORANGE_REGEN = 0.5
 MAX_QUEUED_TURNS = 2
+
+# menu options
+MODES = ["2 players", "vs computer  (you: Snake 1, arrows)", "vs computer  (you: Snake 2, WASD)"]
+AI_LEVELS = ["Easy", "Normal", "Hard"]
+WIN_OPTIONS = [5, 10, 15, 20, 25, 30, 35, 40]
+MATCH_OPTIONS = [("Single game", 1), ("Best of 3", 3), ("Best of 5", 5)]
+DEFAULT_SEL = [0, 1, 3, 1]    # 2 players, Normal, 20 apples, best of 3
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BEST_TIME_FILE = os.path.join(BASE_DIR, "shortest_time.txt")
@@ -67,17 +81,25 @@ LIME = (155, 240, 0)          # snake heads / scoreboard text
 WALL_COL = (175, 227, 214)
 ICE = (165, 242, 243)         # frozen snake
 PINK = (255, 153, 153)        # snake 2 body
-GOLD = (255, 215, 0)          # snake 2 body when enhanced
+GOLD = (255, 215, 0)          # snake 2 body when ghosted
 PURPLE = (204, 0, 204)        # snake 1 body (mode 6)
 RED_MODE = (250, 0, 0)        # snake 1 body (mode 3)
 BLUE_MODE = (70, 130, 180)    # snake 1 body (mode 1)
+IMMUNE_COL = (90, 170, 255)
+PANEL_BG = (26, 30, 38)
+MENU_BG = (22, 26, 34)
+SOFT = (200, 205, 215)
 
 # Processing used angles: 0 = right, 90 = up, 180 = left, 270 = down
 DIRS = {0: (1, 0), 90: (0, -1), 180: (-1, 0), 270: (0, 1)}
 
-CHLOE_KEYS = {pygame.K_f, pygame.K_h, pygame.K_l, pygame.K_o, pygame.K_g}  # all special moves at once
 JOHN_KEYS = {pygame.K_j, pygame.K_o, pygame.K_h, pygame.K_n,
              pygame.K_3, pygame.K_1, pygame.K_6}
+ENTER_KEYS = (pygame.K_RETURN, pygame.K_KP_ENTER)
+
+
+def sign(v):
+    return (v > 0) - (v < 0)
 
 
 class Game:
@@ -98,6 +120,19 @@ class Game:
         self.hide = False
         self.enhance = False
         self.paused = False
+
+        self.in_menu = True
+        self.menu_sel = 0
+        self.sel = list(DEFAULT_SEL)
+        self.ai = {1: False, 2: False}
+        self.ai_level = 1
+        self.win_score = 20
+        self.match_len = 1
+        self.wins = [0, 0]
+        self.round_no = 1
+        self.match_over = False
+        self.round_winner = None
+        self.round_reason = ""
         self.restart()
 
     # ------------------------------------------------------------ resources
@@ -134,15 +169,26 @@ class Game:
             except OSError:
                 pass
 
-    # -------------------------------------------------------------- restart
+    # ----------------------------------------------------------- match flow
+    def start_match(self):
+        mode, lvl, win, match = self.sel
+        self.ai = {1: mode == 2, 2: mode == 1}
+        self.ai_level = lvl
+        self.win_score = WIN_OPTIONS[win]
+        self.match_len = MATCH_OPTIONS[match][1]
+        self.wins = [0, 0]
+        self.round_no = 1
+        self.match_over = False
+        self.in_menu = False
+        self.restart()
+
     def restart(self):
+        """Reset the board for a new game / new round (match score is kept)."""
         self.stopgame = False
         self.paused = False
-        self.passed = 0              # 1 = passed, 2 = escaped, 0 = game over
-        self.cd_freeze = self.cd_lolly = self.cd_reverse = 0
-        self.energy = ENERGY_MAX
-        self.orange_energy = ORANGE_MAX
-        self.turns1, self.turns2 = [], []   # buffered direction changes
+        self.passed = 0              # 0 game over, 1 passed, 2 escaped, 4 round finished
+        self.round_winner = None
+        self.round_reason = ""
         self.time = 0
         self.cooling = False
         self.cool_start = 0
@@ -151,6 +197,11 @@ class Game:
         self.larger = False
         self.ring = [False] * 8
         self.john_seen = set()
+        self.cd_freeze = self.cd_lolly = self.cd_reverse = 0
+        self.cd_magnet = self.cd_immune = self.immune_t = 0
+        self.energy = ENERGY_MAX
+        self.orange_energy = ORANGE_MAX
+        self.turns1, self.turns2 = [], []   # buffered direction changes
 
         self.colours = 2             # snake 1 mode: 0 = '3', 1 = '1', 2 = '6'
         self.colorR = PURPLE
@@ -178,6 +229,11 @@ class Game:
         self.place_apple()
 
     # ---------------------------------------------------------------- apple
+    def snake_cells(self, snake):
+        hx, hy, size = ((self.h1x, self.h1y, self.s1size) if snake == 1
+                        else (self.h2x, self.h2y, self.s2size))
+        return [(hx[i], hy[i]) for i in range(1, size) if (hx[i], hy[i]) != (0, 0)]
+
     def place_apple(self):
         blocked = set()
         if not self.s1dead:
@@ -205,6 +261,7 @@ class Game:
         """One display frame of game logic (the original draw() loop)."""
         self.time += 1
         self.tick_abilities()
+        self.ai_abilities()
         self.speed_adjust()
         self.cooling_check()
         if self.time % self.speed == 0:
@@ -217,6 +274,9 @@ class Game:
         self.cd_freeze = max(0, self.cd_freeze - 1)
         self.cd_lolly = max(0, self.cd_lolly - 1)
         self.cd_reverse = max(0, self.cd_reverse - 1)
+        self.cd_magnet = max(0, self.cd_magnet - 1)
+        self.cd_immune = max(0, self.cd_immune - 1)
+        self.immune_t = max(0, self.immune_t - 1)
         if self.enhance:
             self.energy -= 1
             if self.energy <= 0:                 # ghost mode runs dry
@@ -227,7 +287,7 @@ class Game:
             self.energy = min(ENERGY_MAX, self.energy + ENERGY_REGEN)
         if self.orange:
             self.orange_energy -= 1
-            if self.orange_energy <= 0:              # disguise runs out
+            if self.orange_energy <= 0:          # disguise runs out
                 self.orange_energy = 0
                 self.orange = False
         else:
@@ -247,7 +307,9 @@ class Game:
 
     def travel(self):
         if not self.s1dead and not self.cooling and self.time % self.speed1 == 0:
-            if self.turns1:
+            if self.ai[1]:
+                self.ai_steer(1)
+            elif self.turns1:
                 self.angle1 = self.turns1.pop(0)
             for i in range(self.s1size, 0, -1):
                 if i != 1:
@@ -259,7 +321,9 @@ class Game:
                     self.h1y[1] += dy * SQ
 
         if not self.s2dead and self.time % self.speed2 == 0:
-            if self.turns2:
+            if self.ai[2]:
+                self.ai_steer(2)
+            elif self.turns2:
                 self.angle2 = self.turns2.pop(0)
             for i in range(self.s2size, 0, -1):
                 if i != 1:
@@ -343,10 +407,10 @@ class Game:
         if not self.s1dead and not self.s2dead and not self.enhance:
             for i in range(2, self.s1size + 1):          # snake 2 head hits snake 1 body
                 if h2x[1] == h1x[i] and h2y[1] == h1y[i]:
-                    if self.colours == 0:
+                    if self.colours == 0:                # red mode: snake 2 dies
                         self.s2dead = True
                         self.clear2(0)
-                    else:
+                    elif self.immune_t == 0:             # (Immune: the bite does nothing)
                         self.clear1(i)
                         self.s1size = i
                     break
@@ -356,6 +420,14 @@ class Game:
                     self.s2size = i
                     break
 
+        if self.match_len > 1:
+            self.resolve_round()
+        else:
+            self.classic_end()
+
+    # ---- original co-op ending ------------------------------------------
+    def classic_end(self):
+        h1x, h1y, h2x, h2y = self.h1x, self.h1y, self.h2x, self.h2y
         if self.s1dead and self.s2dead:
             self.stopgame = True
             self.passed = 0
@@ -364,7 +436,7 @@ class Game:
             self.stopgame = True
             self.passed = 0
 
-        if self.s1size > WIN_SCORE and self.s2size > WIN_SCORE:
+        if self.s1size > self.win_score and self.s2size > self.win_score:
             self.stopgame = True
             self.passed = 1
 
@@ -380,6 +452,209 @@ class Game:
         if self.stopgame and self.passed == 1:
             self._record_time()
 
+    # ---- versus ending (best of 3 / 5) ----------------------------------
+    def longer(self):
+        if self.s1size > self.s2size:
+            return 1
+        if self.s2size > self.s1size:
+            return 2
+        return None
+
+    def resolve_round(self):
+        h1x, h1y, h2x, h2y = self.h1x, self.h1y, self.h2x, self.h2y
+        ended, winner, reason = False, None, ""
+
+        if self.enhance and all(not (-SQ < h2x[i] < WIDTH and -SQ < h2y[i] < HEIGHT)
+                                for i in range(1, self.s2size + 1)):
+            ended, winner, reason = True, 2, "Snake 2 escaped!"
+        elif self.s1dead and self.s2dead:
+            ended, winner, reason = True, self.longer(), "Both snakes crashed"
+        elif self.s1dead:
+            ended, winner, reason = True, 2, "Snake 1 crashed"
+        elif self.s2dead:
+            ended, winner, reason = True, 1, "Snake 2 crashed"
+        elif h1x[1] == h2x[1] and h1y[1] == h2y[1] and not self.enhance:
+            ended, winner, reason = True, self.longer(), "Head-on collision"
+        elif self.s1size > self.win_score or self.s2size > self.win_score:
+            ended, winner, reason = True, self.longer(), f"Reached {self.win_score} apples"
+
+        if not ended:
+            return
+        self.stopgame = True
+        self.passed = 4
+        self.round_winner = winner
+        self.round_reason = reason
+        if winner is not None:
+            self.wins[winner - 1] += 1
+            self.round_no += 1
+            if self.wins[winner - 1] > self.match_len // 2:
+                self.match_over = True
+
+    # ----------------------------------------------------- special moves
+    def use_freeze(self):
+        if self.s1dead or self.s2dead or self.cd_freeze:
+            return False
+        self.cooling = True
+        self.cool_start = self.time
+        self.cd_freeze = FREEZE_CD
+        return True
+
+    def use_lollies(self):
+        if (self.s2dead or self.cd_lolly or self.larger
+                or not (self.applex < WIDTH - 2 * SQ and self.appley < HEIGHT - 2 * SQ
+                        and self.applex > PANEL_W + SQ and self.appley > SQ)):
+            return False
+        self.larger = True
+        self.ring = [True] * 8
+        self.cd_lolly = LOLLY_CD
+        return True
+
+    def use_reverse(self):
+        if self.s2dead or self.cd_reverse:
+            return False
+        self.reverse_snake2()
+        self.cd_reverse = REVERSE_CD
+        return True
+
+    def reverse_snake2(self):
+        """Turn snake 2 around so its tail becomes its head."""
+        n = self.s2size
+        h2x, h2y = self.h2x, self.h2y
+        self.turns2.clear()
+        if h2x[n] == h2x[n - 1]:
+            self.angle2 = 270 if h2y[n] > h2y[n - 1] else 90
+        else:
+            self.angle2 = 0 if h2x[n] > h2x[n - 1] else 180
+        old_x, old_y = h2x[:], h2y[:]
+        for i in range(1, n + 1):
+            h2x[i] = old_x[n - i]
+            h2y[i] = old_y[n - i]
+
+    def use_magnet(self):
+        """Pull the apple up to MAGNET_CELLS squares towards snake 1's head."""
+        if self.s1dead or self.cd_magnet:
+            return False
+        blocked = set(self.snake_cells(1)) | (set() if self.s2dead else set(self.snake_cells(2)))
+        ax, ay = self.applex, self.appley
+        hx, hy = self.h1x[1], self.h1y[1]
+        for _ in range(MAGNET_CELLS):
+            dx, dy = hx - ax, hy - ay
+            if abs(dx) >= abs(dy) and dx != 0:
+                nx, ny = ax + sign(dx) * SQ, ay
+            elif dy != 0:
+                nx, ny = ax, ay + sign(dy) * SQ
+            else:
+                break
+            if (nx, ny) == (hx, hy) or not self.in_field(nx, ny) or (nx, ny) in blocked:
+                break
+            ax, ay = nx, ny
+        if (ax, ay) == (self.applex, self.appley):
+            return False
+        self.applex, self.appley = ax, ay
+        self.cd_magnet = MAGNET_CD
+        return True
+
+    def use_immune(self):
+        if self.s1dead or self.cd_immune:
+            return False
+        self.immune_t = IMMUNE_DUR
+        self.cd_immune = IMMUNE_CD
+        return True
+
+    # ------------------------------------------------------------------ AI
+    def free_area(self, start, blocked, cap):
+        seen = {start}
+        stack = [start]
+        while stack and len(seen) < cap:
+            x, y = stack.pop()
+            for dx, dy in DIRS.values():
+                n = (x + dx * SQ, y + dy * SQ)
+                if n not in seen and n not in blocked and self.in_field(*n):
+                    seen.add(n)
+                    stack.append(n)
+        return len(seen)
+
+    def ai_steer(self, snake):
+        hx, hy, size, cur = ((self.h1x, self.h1y, self.s1size, self.angle1) if snake == 1
+                             else (self.h2x, self.h2y, self.s2size, self.angle2))
+        head = (hx[1], hy[1])
+        blocked = set(self.snake_cells(1)) | set(self.snake_cells(2))
+        if (self.s1dead and snake == 2) or (self.s2dead and snake == 1):
+            blocked = set(self.snake_cells(snake))
+
+        options = []
+        for a in (cur, (cur + 90) % 360, (cur + 270) % 360):
+            dx, dy = DIRS[a]
+            c = (head[0] + dx * SQ, head[1] + dy * SQ)
+            if self.in_field(*c) and c not in blocked:
+                options.append((a, c))
+
+        if not options:
+            if snake == 2 and self.use_reverse():        # trapped: turn round
+                return
+            return                                       # nothing to do, keep going
+
+        lvl = self.ai_level
+        if random.random() < (0.22, 0.05, 0.0)[lvl]:
+            self.set_angle(snake, random.choice(options)[0])
+            return
+
+        targets = [(self.applex, self.appley)]
+        if self.larger:
+            targets += [c for i, c in enumerate(self.ring_cells())
+                        if self.ring[i] and self.in_field(*c)]
+        tx, ty = min(targets, key=lambda t: abs(t[0] - head[0]) + abs(t[1] - head[1]))
+
+        def score(opt):
+            a, c = opt
+            s = (abs(c[0] - tx) + abs(c[1] - ty)) / SQ - (0.4 if a == cur else 0)
+            if lvl == 1:
+                exits = sum(1 for dx, dy in DIRS.values()
+                            if self.in_field(c[0] + dx * SQ, c[1] + dy * SQ)
+                            and (c[0] + dx * SQ, c[1] + dy * SQ) not in blocked)
+                if exits == 0:
+                    s += 100
+            elif lvl == 2:
+                area = self.free_area(c, blocked | {c}, size + 15)
+                if area < size + 8:
+                    s += (size + 8 - area) * 3
+            return s
+
+        self.set_angle(snake, min(options, key=score)[0])
+
+    def set_angle(self, snake, angle):
+        if snake == 1:
+            self.angle1 = angle
+            self.turns1.clear()
+        else:
+            self.angle2 = angle
+            self.turns2.clear()
+
+    def ai_abilities(self):
+        if self.time % 8 or not (self.ai[1] or self.ai[2]):
+            return
+        if random.random() > (0.35, 0.7, 1.0)[self.ai_level]:
+            return
+        ax, ay = self.applex, self.appley
+        h1 = (self.h1x[1], self.h1y[1])
+        h2 = (self.h2x[1], self.h2y[1])
+        d1 = (abs(h1[0] - ax) + abs(h1[1] - ay)) // SQ
+        d2 = (abs(h2[0] - ax) + abs(h2[1] - ay)) // SQ
+
+        if self.ai[2] and not self.s2dead:
+            if d1 <= 4 and d2 > d1:
+                self.use_freeze()
+            elif random.random() < 0.3:
+                self.use_lollies()
+        if self.ai[1] and not self.s1dead:
+            if d1 >= 4 and (d2 > d1 or random.random() < 0.3):
+                self.use_magnet()
+            if not self.s2dead and self.immune_t == 0:
+                near = any(abs(h2[0] - x) + abs(h2[1] - y) <= 3 * SQ
+                           for x, y in self.snake_cells(1)[1:])
+                if near:
+                    self.use_immune()
+
     # --------------------------------------------------------------- input
     def handle_event(self, event):
         if event.type == pygame.QUIT:
@@ -391,8 +666,14 @@ class Game:
             return
 
         if event.type == getattr(pygame, "WINDOWFOCUSLOST", -1):
-            if not self.stopgame:
+            if not self.stopgame and not self.in_menu:
                 self.paused = True
+            return
+
+        if self.in_menu:
+            if event.type == pygame.KEYDOWN:
+                self.held.add(event.key)
+                self.menu_key(event.key)
             return
 
         if self.popup:                                   # dialog is modal
@@ -408,11 +689,28 @@ class Game:
             self.on_keydown(event.key)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.aim_button.collidepoint(event.pos):
-                self.popup = ("How to pass?", "40 Apples Inside The Hoard Each")
+                if self.match_len > 1:
+                    msg = f"First to {self.win_score} apples wins the round"
+                else:
+                    msg = f"{self.win_score} Apples Inside The Hoard Each"
+                self.popup = ("How to pass?", msg)
             elif self.best_button.collidepoint(event.pos):
                 msg = ("No time recorded yet" if self.best_time is None
                        else f"{self.best_time} seconds")
                 self.popup = ("Shortest time", msg)
+
+    def menu_key(self, key):
+        sizes = [len(MODES), len(AI_LEVELS), len(WIN_OPTIONS), len(MATCH_OPTIONS)]
+        if key in (pygame.K_UP, pygame.K_w):
+            self.menu_sel = (self.menu_sel - 1) % 4
+        elif key in (pygame.K_DOWN, pygame.K_s):
+            self.menu_sel = (self.menu_sel + 1) % 4
+        elif key in (pygame.K_LEFT, pygame.K_a):
+            self.sel[self.menu_sel] = (self.sel[self.menu_sel] - 1) % sizes[self.menu_sel]
+        elif key in (pygame.K_RIGHT, pygame.K_d):
+            self.sel[self.menu_sel] = (self.sel[self.menu_sel] + 1) % sizes[self.menu_sel]
+        elif key in ENTER_KEYS or key == pygame.K_SPACE:
+            self.start_match()
 
     def queue_turn(self, snake, new):
         """Buffer a direction change (up to MAX_QUEUED_TURNS ahead)."""
@@ -430,23 +728,33 @@ class Game:
             q.append(new)
 
     def on_keydown(self, key):
-        if key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
-            self.held.add(key)
-            self.restart()
-            return
-
         self.held.add(key)
         if key in JOHN_KEYS:
             self.john_seen.add(key)
 
+        # round / match finished: Enter continues
+        if self.stopgame and self.passed == 4 and key in ENTER_KEYS:
+            if self.match_over:
+                self.start_match()                   # rematch, same settings
+            else:
+                self.restart()                       # next round
+            return
+        if key == pygame.K_ESCAPE:
+            self.in_menu = True
+            self.paused = False
+            return
+        if key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
+            if not (self.stopgame and self.passed == 4):
+                self.restart()
+            return
         if key == pygame.K_p and not self.stopgame:
             self.paused = not self.paused
             return
         if self.paused:
             return
 
-        # ---- snake 1
-        if not self.s1dead:
+        # ---- snake 1 (arrows)
+        if not self.s1dead and not self.ai[1]:
             if key == pygame.K_UP:
                 self.queue_turn(1, 90)
             if key == pygame.K_DOWN:
@@ -456,10 +764,10 @@ class Game:
             if key == pygame.K_RIGHT:
                 self.queue_turn(1, 0)
 
-            if key == pygame.K_f and not self.s2dead and self.cd_freeze == 0:
-                self.cooling = True
-                self.cool_start = self.time
-                self.cd_freeze = FREEZE_CD
+            if key == pygame.K_m:
+                self.use_magnet()
+            if key == pygame.K_i:
+                self.use_immune()
             if key == pygame.K_3:
                 self.colorR, self.colours = RED_MODE, 0
             if key == pygame.K_1:
@@ -467,8 +775,8 @@ class Game:
             if key == pygame.K_6:
                 self.colorR, self.colours = PURPLE, 2
 
-        # ---- snake 2
-        if not self.s2dead:
+        # ---- snake 2 (WASD)
+        if not self.s2dead and not self.ai[2]:
             if key == pygame.K_w:
                 self.queue_turn(2, 90)
             if key == pygame.K_s:
@@ -478,6 +786,13 @@ class Game:
             if key == pygame.K_d:
                 self.queue_turn(2, 0)
 
+            if key == pygame.K_f:
+                self.use_freeze()
+            if key == pygame.K_l:
+                self.use_lollies()
+            if key == pygame.K_r and not self.zigzag:
+                if self.use_reverse():
+                    self.zigzag = True               # ignore key-repeat until released
             if key == pygame.K_h:
                 self.hide = True
             if key == pygame.K_o and self.orange_energy >= ORANGE_MIN:
@@ -485,31 +800,6 @@ class Game:
             if key == pygame.K_g and self.energy >= ENERGY_MIN:
                 self.enhance = True
                 self.colorL = GOLD
-            if key == pygame.K_l and self.cd_lolly == 0:
-                if (not self.larger and self.applex < WIDTH - 2 * SQ
-                        and self.appley < HEIGHT - 2 * SQ
-                        and self.applex > PANEL_W + SQ and self.appley > SQ):
-                    self.larger = True
-                    self.ring = [True] * 8
-                    self.cd_lolly = LOLLY_CD
-            if key == pygame.K_r and not self.zigzag and self.cd_reverse == 0:
-                self.reverse_snake2()
-                self.cd_reverse = REVERSE_CD
-
-    def reverse_snake2(self):
-        """Z: turn snake 2 around so its tail becomes its head."""
-        n = self.s2size
-        h2x, h2y = self.h2x, self.h2y
-        self.zigzag = True
-        self.turns2.clear()
-        if h2x[n] == h2x[n - 1]:
-            self.angle2 = 270 if h2y[n] > h2y[n - 1] else 90
-        else:
-            self.angle2 = 0 if h2x[n] > h2x[n - 1] else 180
-        old_x, old_y = h2x[:], h2y[:]
-        for i in range(1, n + 1):
-            h2x[i] = old_x[n - i]
-            h2y[i] = old_y[n - i]
 
     def on_keyup(self, key):
         self.held.discard(key)
@@ -536,12 +826,16 @@ class Game:
                 surf = font.render(line, True, colour)
                 self.screen.blit(surf, surf.get_rect(center=(cx, top + lh * k + lh / 2)))
 
-    def cell(self, x, y, fill, outline=WHITE):
+    def text_left(self, line, size, colour, x, cy):
+        surf = self.font(size).render(line, True, colour)
+        self.screen.blit(surf, surf.get_rect(midleft=(x, cy)))
+
+    def cell(self, x, y, fill, outline=WHITE, width=1):
         r = pygame.Rect(x, y, SQ, SQ)
         pygame.draw.rect(self.screen, fill, r)
-        pygame.draw.rect(self.screen, outline, r, 1)
+        pygame.draw.rect(self.screen, outline, r, width)
 
-    def draw_snake(self, hx, hy, size, body_colour, frozen=False):
+    def draw_snake(self, hx, hy, size, body_colour, frozen=False, immune=False):
         # indices 1..size-1 are visible; index `size` is the vacated tail cell.
         # (0, 0) is the "no segment yet" marker used by the original.
         for i in range(size - 1, 0, -1):
@@ -549,7 +843,10 @@ class Game:
             if (x, y) == (0, 0):
                 continue
             colour = ICE if frozen else (LIME if i == 1 else body_colour)
-            self.cell(x, y, colour)
+            if immune:
+                self.cell(x, y, colour, IMMUNE_COL, 3)
+            else:
+                self.cell(x, y, colour)
 
     def draw_bar(self, y, label, frac, colour):
         r = pygame.Rect(10, y, PANEL_W - 20, 13)
@@ -559,45 +856,51 @@ class Game:
         pygame.draw.rect(self.screen, (141, 141, 141), r, 1, border_radius=4)
         self.text(label, 11, BLACK, r.centerx, r.centery)
 
-    def draw_abilities(self):
+    def cd_bar(self, y, name, cd, total):
         ready, charging = (120, 210, 100), (150, 180, 220)
+        secs = -(-cd // FPS)
+        self.draw_bar(y, name if cd == 0 else f"{name}  {secs}s",
+                      1 - cd / total, ready if cd == 0 else charging)
 
-        def cd_bar(y, name, cd, total):
-            secs = -(-cd // FPS)
-            self.draw_bar(y, name if cd == 0 else f"{name}  {secs}s",
-                          1 - cd / total, ready if cd == 0 else charging)
-
-        cd_bar(435, "F  Freeze", self.cd_freeze, FREEZE_CD)
-        cd_bar(450, "L  Lollies", self.cd_lolly, LOLLY_CD)
-        cd_bar(465, "R  Reverse", self.cd_reverse, REVERSE_CD)
-        self.draw_bar(480, "G  Ghost", self.energy / ENERGY_MAX, GOLD)
-        self.draw_bar(495, "O  Orange", self.orange_energy / ORANGE_MAX, (255, 165, 0))
-
-    def draw_paused(self):
-        dim = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        dim.fill((0, 0, 0, 110))
-        self.screen.blit(dim, (0, 0))
-        self.text("PAUSED", 48, WHITE, WIDTH // 2, HEIGHT // 2 - 20)
-        self.text("Press P to resume", 20, WHITE, WIDTH // 2, HEIGHT // 2 + 25)
-
-    def draw_board(self):
-        self.screen.fill(WHITE)
-
-        # scoreboard
-        self.text(str(self.time // FPS), 15, (0, 255, 0), PANEL_W // 2, 100)
-        self.text(f"snake 1\n{self.s1size - 1}", 25, LIME, PANEL_W // 2, HEIGHT // 4)
-        self.text(f"snake 2\n{self.s2size - 1}", 25, LIME, PANEL_W // 2, HEIGHT * 5 // 8)
-        if self.s1size - 1 == 7 and self.s2size - 1 == 7:
-            self.text("Congratulations on\nyour special day!", 12, LIME, PANEL_W // 2, 40)
-
+    def draw_abilities(self):
+        if not self.s1dead:
+            self.cd_bar(200, "M  Magnet", self.cd_magnet, MAGNET_CD)
+            if self.immune_t:
+                self.draw_bar(215, "I  Immune  ON", self.immune_t / IMMUNE_DUR, IMMUNE_COL)
+            else:
+                self.cd_bar(215, "I  Immune", self.cd_immune, IMMUNE_CD)
         if not self.s2dead:
-            self.draw_abilities()
+            self.cd_bar(435, "F  Freeze", self.cd_freeze, FREEZE_CD)
+            self.cd_bar(450, "L  Lollies", self.cd_lolly, LOLLY_CD)
+            self.cd_bar(465, "R  Reverse", self.cd_reverse, REVERSE_CD)
+            self.draw_bar(480, "G  Ghost", self.energy / ENERGY_MAX, GOLD)
+            self.draw_bar(495, "O  Orange", self.orange_energy / ORANGE_MAX, (255, 165, 0))
 
-        # buttons
+    def draw_panel(self):
+        pygame.draw.rect(self.screen, PANEL_BG, (0, 0, PANEL_W, HEIGHT))
+        mid = PANEL_W // 2
+        if self.match_len > 1:
+            self.text(f"BEST OF {self.match_len}  -  ROUND {min(self.round_no, 99)}", 11, SOFT, mid, 16)
+            self.text(f"{self.wins[0]}  :  {self.wins[1]}", 22, WHITE, mid, 40)
+        self.text(str(self.time // FPS), 15, (0, 255, 0), mid, 100)
+        if self.ai[1]:
+            self.text("computer", 11, SOFT, mid, 122)
+        if self.ai[2]:
+            self.text("computer", 11, SOFT, mid, 362)
+        self.text(f"snake 1\n{self.s1size - 1}", 25, LIME, mid, HEIGHT // 4)
+        self.text(f"snake 2\n{self.s2size - 1}", 25, LIME, mid, HEIGHT * 5 // 8)
+        if self.s1size - 1 == 7 and self.s2size - 1 == 7:
+            self.text("Congratulations on\nyour special day!", 12, LIME, mid, 70)
+        self.draw_abilities()
+
         for rect, label in ((self.best_button, "Shortest time"), (self.aim_button, "Aim")):
             pygame.draw.rect(self.screen, (218, 218, 218), rect, border_radius=10)
             pygame.draw.rect(self.screen, (141, 141, 141), rect, 1, border_radius=10)
             self.text(label, 14, BLACK, rect.centerx, rect.centery)
+
+    def draw_board(self):
+        self.screen.fill(WHITE)
+        self.draw_panel()
 
         # apple
         if not self.orange:
@@ -622,9 +925,24 @@ class Game:
 
         # snakes
         if not self.s1dead:
-            self.draw_snake(self.h1x, self.h1y, self.s1size, self.colorR, frozen=self.cooling)
+            self.draw_snake(self.h1x, self.h1y, self.s1size, self.colorR,
+                            frozen=self.cooling, immune=self.immune_t > 0)
         if not self.s2dead and not self.hide:
             self.draw_snake(self.h2x, self.h2y, self.s2size, self.colorL)
+
+    def draw_banner(self, lines):
+        """Translucent box over the playfield. lines = [(text, size, colour), ...]"""
+        total = sum(int(sz * 1.5) for _, sz, _ in lines) + 30
+        box = pygame.Surface((440, total), pygame.SRCALPHA)
+        box.fill((255, 255, 255, 235))
+        rect = box.get_rect(center=(FIELD_CX, HEIGHT // 2))
+        self.screen.blit(box, rect)
+        pygame.draw.rect(self.screen, (90, 90, 90), rect, 2, border_radius=4)
+        y = rect.top + 15
+        for txt, sz, col in lines:
+            h = int(sz * 1.5)
+            self.text(txt, sz, col, FIELD_CX, y + h / 2)
+            y += h
 
     def draw_pass_screen(self):
         self.screen.fill(WHITE)
@@ -633,18 +951,36 @@ class Game:
             y = HEIGHT * 3 // 8 + 64 + 32 * n
             self.text(f"Snake{n + 1}: {size - 1}", 32, BLACK, WIDTH // 2, y)
             self.text("(Dead)" if dead else "(Alive)", 32,
-                      (255, 0, 0) if dead else (0, 255, 0), WIDTH // 2 + 4 * 32 + 10, y)
+                      (255, 0, 0) if dead else (0, 160, 0), WIDTH // 2 + 4 * 32 + 10, y)
+        self.text("Shift: play again      Esc: menu", 18, (90, 90, 90), WIDTH // 2, HEIGHT - 50)
 
     def draw_escape_screen(self):
         self.screen.fill((0, 128, 255))
         self.text("Congratulations,\nyou escaped\nEnjoy the freedom", 50, GOLD,
                   WIDTH // 2, HEIGHT // 2)
+        self.text("Shift: play again      Esc: menu", 18, WHITE, WIDTH // 2, HEIGHT - 50)
 
     def draw_game_over(self):
-        self.text("GAME OVER", 32, BLACK, WIDTH // 2, HEIGHT * 3 // 8)
-        self.text(f"Score:  {self.s1size + self.s2size - 2} units long in total", 32, BLACK,
-                  WIDTH // 2, HEIGHT * 7 // 16)
-        self.text("To restart, press Shift.", 32, BLACK, WIDTH // 2, HEIGHT // 2)
+        self.draw_banner([("GAME OVER", 34, BLACK),
+                          (f"Score:  {self.s1size + self.s2size - 2} units long in total", 24, BLACK),
+                          ("Shift: restart      Esc: menu", 20, (90, 90, 90))])
+
+    def draw_round_over(self):
+        w = self.round_winner
+        if self.match_over:
+            head, hint = f"SNAKE {w} WINS THE MATCH!", "Enter: rematch      Esc: menu"
+        elif w is None:
+            head, hint = "DRAW", "Enter: replay the round"
+        else:
+            head, hint = f"SNAKE {w} WINS THE ROUND", "Enter: next round"
+        if w is None:
+            reason = self.round_reason + " - no point"
+        else:
+            reason = self.round_reason
+        self.draw_banner([(head, 30, BLACK),
+                          (reason, 20, (60, 60, 60)),
+                          (f"Match score    {self.wins[0]}  -  {self.wins[1]}", 24, BLACK),
+                          (hint, 20, (90, 90, 90))])
 
     def popup_rect(self):
         return pygame.Rect(0, 0, 360, 150).move(WIDTH // 2 - 180, HEIGHT // 2 - 75)
@@ -662,27 +998,90 @@ class Game:
         pygame.draw.rect(self.screen, (120, 120, 120), r, 2, border_radius=8)
         title, msg = self.popup
         self.text(title, 18, (60, 60, 60), r.centerx, r.top + 24)
-        self.text(msg, 20, BLACK, r.centerx, r.centery - 5)
+        self.text(msg, 18, BLACK, r.centerx, r.centery - 5)
         ok = self.popup_ok_rect()
         pygame.draw.rect(self.screen, (218, 218, 218), ok, border_radius=8)
         pygame.draw.rect(self.screen, (141, 141, 141), ok, 1, border_radius=8)
         self.text("OK", 16, BLACK, ok.centerx, ok.centery)
 
+    def draw_paused(self):
+        dim = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 110))
+        self.screen.blit(dim, (0, 0))
+        self.text("PAUSED", 48, WHITE, WIDTH // 2, HEIGHT // 2 - 20)
+        self.text("Press P to resume", 20, WHITE, WIDTH // 2, HEIGHT // 2 + 25)
+
+    def draw_menu(self):
+        self.screen.fill(MENU_BG)
+        self.text("TWO PLAYER SNAKE", 44, LIME, WIDTH // 2, 52)
+
+        mode, lvl, win, match = self.sel
+        rows = [("Mode", MODES[mode]),
+                ("Computer level", AI_LEVELS[lvl]),
+                ("Apples to win", str(WIN_OPTIONS[win])),
+                ("Match", MATCH_OPTIONS[match][0])]
+        for i, (label, val) in enumerate(rows):
+            y = 122 + i * 40
+            selected = i == self.menu_sel
+            greyed = i == 1 and mode == 0
+            if selected:
+                pygame.draw.rect(self.screen, (52, 62, 84), (36, y - 18, 568, 36), border_radius=8)
+            self.text_left(label, 22, (120, 125, 135) if greyed else WHITE, 56, y)
+            vcol = (120, 125, 135) if greyed else (LIME if selected else SOFT)
+            self.text_left(f"<  {val}  >" if selected else f"    {val}", 22, vcol, 250, y)
+
+        if MATCH_OPTIONS[match][1] > 1:
+            hint = [f"Versus: first snake to {WIN_OPTIONS[win]} apples wins the round.",
+                    "A crash loses the round; Snake 2 escaping wins it."]
+        else:
+            hint = [f"Co-op: BOTH snakes must reach {WIN_OPTIONS[win]} apples to pass.",
+                    "Both crash = game over; Snake 2 escaping through the wall wins."]
+        self.text(hint, 14, SOFT, WIDTH // 2, 300)
+
+        cols = [
+            (30, "SNAKE 1  -  arrow keys" + ("  (computer)" if mode == 2 else ""), (225, 130, 240),
+             [("Arrows", "steer"),
+              ("M", "Magnet: pull the apple closer"),
+              ("I", "Immune: can't be bitten, 3 s"),
+              ("3 / 1 / 6", "red slow / blue fast / normal")]),
+            (335, "SNAKE 2  -  W A S D" + ("  (computer)" if mode == 1 else ""), PINK,
+             [("W A S D", "steer"),
+              ("F", "Freeze snake 1"),
+              ("L", "Lollies around the apple"),
+              ("R", "Reverse your snake"),
+              ("H", "(hold) invisible"),
+              ("O", "(hold) apple looks like an orange"),
+              ("G", "(hold) ghost: pass walls, escape")]),
+        ]
+        for x, head, col, items in cols:
+            self.text_left(head, 16, col, x, 352)
+            for k, (key, desc) in enumerate(items):
+                y = 384 + k * 21
+                self.text_left(key, 14, LIME, x, y)
+                self.text_left(desc, 13, SOFT, x + 72, y)
+
+        self.text("Up / Down: choose      Left / Right: change      Enter: start", 16, WHITE,
+                  WIDTH // 2, 566)
+        self.text("In game:   P pause      Shift restart      Esc menu", 14, (150, 155, 165),
+                  WIDTH // 2, 596)
+
     def draw(self):
+        if self.in_menu:
+            self.draw_menu()
+            return
+
         if self.stopgame and self.passed == 1:
             self.draw_pass_screen()
         elif self.stopgame and self.passed == 2:
             self.draw_escape_screen()
         else:
             self.draw_board()
-            if self.stopgame:
+            if self.stopgame and self.passed == 4:
+                self.draw_round_over()
+            elif self.stopgame:
                 self.draw_game_over()
 
         # easter eggs from the original
-        if CHLOE_KEYS <= self.held:
-            self.text(["It Looked Like Peace Ran Away,", "", "Your Forgiveness Objected.", "",
-                       "Rise,", "", "Your Omnipotent Unification"],
-                      12, LIME, WIDTH // 8, HEIGHT // 2 - 50)
         if JOHN_KEYS <= self.john_seen:
             self.text(["John 3:16",
                        "For God so loved the world that he gave his one and only Son,",
@@ -699,7 +1098,8 @@ class Game:
         while True:
             for event in pygame.event.get():
                 self.handle_event(event)
-            if not self.popup and not self.stopgame and not self.paused:
+            if (not self.in_menu and not self.popup and not self.stopgame
+                    and not self.paused):
                 self.update()
             self.draw()
             pygame.display.flip()
