@@ -22,9 +22,9 @@ Snake 2  (arrow keys, right side of the keyboard)
     Arrows ....... steer
     M ............ Magnet: pull the apple up to 3 squares towards you   (8 s cooldown)
     I ............ Ice: freeze snake 1 for about 1.6 s                 (6 s cooldown)
-    3 / 1 / 6 .... mode: red = slow but DEADLY (snake 1 dies if it touches you,
-                         body or head-on),
-                         blue = fast, purple = normal
+    1 / 2 / 3 .... speed mode:  1 = red, slow but DEADLY (snake 1 dies if it
+                         touches you, body or head-on)
+                         2 = purple, normal (default)    3 = blue, fast
 
 P pause (also pauses if the window loses focus)   Shift restart   Esc menu
 
@@ -776,12 +776,12 @@ class Game:
                 self.use_magnet()
             if key == pygame.K_i:
                 self.use_ice()
-            if key == pygame.K_3:
-                self.colorR, self.colours = RED_MODE, 0
             if key == pygame.K_1:
-                self.colorR, self.colours = BLUE_MODE, 1
-            if key == pygame.K_6:
+                self.colorR, self.colours = RED_MODE, 0
+            if key == pygame.K_2:
                 self.colorR, self.colours = PURPLE, 2
+            if key == pygame.K_3:
+                self.colorR, self.colours = BLUE_MODE, 1
 
         # ---- snake 2 (WASD)
         if not self.s2dead and not self.ai[2]:
@@ -1053,7 +1053,9 @@ class Game:
              [("Arrows", "steer"),
               ("M", "Magnet: pull the apple closer"),
               ("I", "Ice: freeze snake 1 for a moment"),
-              ("3 / 1 / 6", "red: slow, deadly / blue: fast")]),
+              ("1", "red: slow but deadly"),
+              ("2", "purple: normal speed"),
+              ("3", "blue: fast")]),
         ]
         for x, head, col, items in cols:
             self.text_left(head, 16, col, x, 352)
