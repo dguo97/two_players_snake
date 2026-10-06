@@ -10,7 +10,7 @@ how many apples win a round, and the match length (single game / best of 3 / 5).
 
 Snake 1  (W A S D, left side of the keyboard)
     W A S D ...... steer
-    F ............ Freeze snake 2                         (6 s cooldown)
+    F ............ Freeze snake 2 for 4 s (long!)         (15 s cooldown)
     L ............ ring of 8 lollies round the apple      (10 s cooldown)
     R ............ Reverse snake 1                       (3 s cooldown)
     H (hold) ..... invisible
@@ -25,6 +25,8 @@ Snake 2  (arrow keys, right side of the keyboard)
     1 / 2 / 3 .... speed mode:  1 = red, slow but DEADLY (snake 1 dies if it
                          touches you, body or head-on)
                          2 = purple, normal (default)    3 = blue, fast
+
+A frozen snake's head can't be run into: the other snake simply can't enter that square.
 
 P pause (also pauses if the window loses focus)   Shift restart   Esc menu
 
@@ -45,13 +47,14 @@ import pygame
 WIDTH, HEIGHT = 640, 640
 SQ = 32                       # size of one grid square
 FPS = 60
-PANEL_W = WIDTH // 4          # scoreboard panel on the left
-NUM_SQ = HEIGHT // SQ
+PANEL_W = 5 * SQ              # scoreboard panel on the left (fixed width)
+COLS, ROWS = WIDTH // SQ, HEIGHT // SQ   # grid size; changed by Game.set_board()
 MAX_LEN = 2500
 FIELD_CX = (PANEL_W + WIDTH) // 2     # horizontal centre of the playfield
 
 # special-move balancing (frames)
-FREEZE_CD = 6 * FPS
+FREEZE_DUR = 4 * FPS          # Freeze (F) holds snake 2 for 4 s ...
+FREEZE_CD = 15 * FPS          # ... but takes 15 s to recharge (Ice: 1.6 s / 6 s)
 LOLLY_CD = 10 * FPS
 REVERSE_CD = 3 * FPS
 MAGNET_CD = 8 * FPS
@@ -66,12 +69,15 @@ ORANGE_MIN = FPS // 2
 ORANGE_REGEN = 0.5
 MAX_QUEUED_TURNS = 2
 
+# board sizes (columns x rows of squares, including the scoreboard panel and walls)
+BOARDS = [("Classic", 20, 20), ("Large", 28, 22), ("Extra large", 32, 24)]
+
 # menu options
 MODES = ["2 players", "vs computer  (you: Snake 1, WASD)", "vs computer  (you: Snake 2, arrows)"]
 AI_LEVELS = ["Easy", "Normal", "Hard"]
 WIN_OPTIONS = [5, 10, 15, 20, 25, 30, 35, 40]
 MATCH_OPTIONS = [("Single game", 1), ("Best of 3", 3), ("Best of 5", 5)]
-DEFAULT_SEL = [0, 1, 3, 1]    # 2 players, Normal, 20 apples, best of 3
+DEFAULT_SEL = [0, 1, 3, 1, 1] # 2 players, Normal, 20 apples, best of 3, Large board
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BEST_TIME_FILE = os.path.join(BASE_DIR, "shortest_time.txt")
@@ -111,13 +117,13 @@ def sign(v):
 class Game:
     def __init__(self):
         pygame.init()
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.screen = None
+        self.set_board(20, 20)       # the menu always uses the classic 640x640 window
         pygame.display.set_caption("Two Player Snake")
         self.clock = pygame.time.Clock()
         self._fonts = {}
 
         self.lolly = self._load_lolly()
-        self.aim_button = pygame.Rect(WIDTH // 16 - 10, HEIGHT * 7 // 8, 100, 30)
         self.best_time = self._load_best_time()
 
         self.popup = None            # (title, message) while a dialog is open
@@ -183,8 +189,27 @@ class Game:
         return f"Snake {3 - n}"
 
     # ----------------------------------------------------------- match flow
+    def set_board(self, cols, rows):
+        """(Re)size the window. All layout code reads these module globals when it draws."""
+        global WIDTH, HEIGHT, COLS, ROWS, FIELD_CX
+        if self.screen is not None and (cols, rows) == (COLS, ROWS) \
+                and (WIDTH, HEIGHT) == (cols * SQ, rows * SQ):
+            return
+        COLS, ROWS = cols, rows
+        WIDTH, HEIGHT = cols * SQ, rows * SQ
+        FIELD_CX = (PANEL_W + WIDTH) // 2
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.aim_button = pygame.Rect((PANEL_W - 100) // 2, HEIGHT * 7 // 8, 100, 30)
+
+    def enter_menu(self):
+        self.in_menu = True
+        self.paused = False
+        self.set_board(20, 20)
+
     def start_match(self):
-        mode, lvl, win, match = self.sel
+        mode, lvl, win, match, board = self.sel
+        _, cols, rows = BOARDS[board]
+        self.set_board(cols, rows)
         self.ai = {1: mode == 1, 2: mode == 2}
         self.ai_level = lvl
         self.win_score = WIN_OPTIONS[win]
@@ -258,8 +283,8 @@ class Game:
         if not self.s2dead:
             blocked.update((self.h2x[i], self.h2y[i]) for i in range(1, self.s2size))
         free = [(c * SQ, r * SQ)
-                for c in range(PANEL_W // SQ + 1, NUM_SQ - 1)
-                for r in range(1, NUM_SQ - 1)
+                for c in range(PANEL_W // SQ + 1, COLS - 1)
+                for r in range(1, ROWS - 1)
                 if (c * SQ, r * SQ) not in blocked]
         self.applex, self.appley = random.choice(free) if free else (PANEL_W + 2 * SQ, 2 * SQ)
 
@@ -318,7 +343,7 @@ class Game:
             self.speed, self.speed1, self.speed2 = 12, 4, 3
 
     def cooling_check(self):
-        if self.cooling and self.time >= self.cool_start + self.speed * 8:
+        if self.cooling and self.time >= self.cool_start + FREEZE_DUR:
             self.cooling = False
         if self.cooling2 and self.time >= self.cool2_start + ICE_DUR:
             self.cooling2 = False
@@ -329,28 +354,45 @@ class Game:
                 self.ai_steer(1)
             elif self.turns1:
                 self.angle1 = self.turns1.pop(0)
-            for i in range(self.s1size, 0, -1):
-                if i != 1:
-                    self.h1x[i] = self.h1x[i - 1]
-                    self.h1y[i] = self.h1y[i - 1]
-                else:
-                    dx, dy = DIRS[self.angle1]
-                    self.h1x[1] += dx * SQ
-                    self.h1y[1] += dy * SQ
+            if not self.blocked_by_frozen_head(1):
+                for i in range(self.s1size, 0, -1):
+                    if i != 1:
+                        self.h1x[i] = self.h1x[i - 1]
+                        self.h1y[i] = self.h1y[i - 1]
+                    else:
+                        dx, dy = DIRS[self.angle1]
+                        self.h1x[1] += dx * SQ
+                        self.h1y[1] += dy * SQ
 
         if not self.s2dead and not self.cooling2 and self.time % self.speed2 == 0:
             if self.ai[2]:
                 self.ai_steer(2)
             elif self.turns2:
                 self.angle2 = self.turns2.pop(0)
-            for i in range(self.s2size, 0, -1):
-                if i != 1:
-                    self.h2x[i] = self.h2x[i - 1]
-                    self.h2y[i] = self.h2y[i - 1]
-                else:
-                    dx, dy = DIRS[self.angle2]
-                    self.h2x[1] += dx * SQ
-                    self.h2y[1] += dy * SQ
+            if not self.blocked_by_frozen_head(2):
+                for i in range(self.s2size, 0, -1):
+                    if i != 1:
+                        self.h2x[i] = self.h2x[i - 1]
+                        self.h2y[i] = self.h2y[i - 1]
+                    else:
+                        dx, dy = DIRS[self.angle2]
+                        self.h2x[1] += dx * SQ
+                        self.h2y[1] += dy * SQ
+
+    def blocked_by_frozen_head(self, snake):
+        """A frozen snake's head can't be run into: the mover just stays put this step
+        (so freezing someone and ramming their head is not a way to win)."""
+        if self.enhance:                              # ghost mode ignores collisions
+            return False
+        if snake == 1:
+            if not self.cooling2 or self.s2dead:
+                return False
+            dx, dy = DIRS[self.angle1]
+            return (self.h1x[1] + dx * SQ, self.h1y[1] + dy * SQ) == (self.h2x[1], self.h2y[1])
+        if not self.cooling or self.s1dead:
+            return False
+        dx, dy = DIRS[self.angle2]
+        return (self.h2x[1] + dx * SQ, self.h2y[1] + dy * SQ) == (self.h1x[1], self.h1y[1])
 
     def head_on(self, snake, x, y):
         if snake == 1:
@@ -397,13 +439,15 @@ class Game:
             self.h2y[i] = 0
 
     def check_dead(self):
+        # Only squares you can SEE are dangerous: the snake is drawn up to index size-1, so the
+        # hidden square its tail just left (index size) must not bite, cut or kill anything.
         h1x, h1y, h2x, h2y = self.h1x, self.h1y, self.h2x, self.h2y
 
         def hits_wall(x, y):
             return x >= WIDTH - SQ or y >= HEIGHT - SQ or x <= PANEL_W or y <= 0
 
         if not self.s1dead:
-            for i in range(2, self.s1size + 1):          # bites itself
+            for i in range(2, self.s1size):          # bites itself
                 if h1x[1] == h1x[i] and h1y[1] == h1y[i]:
                     self.s1dead = True
                     self.clear1(0)
@@ -413,7 +457,7 @@ class Game:
                 self.clear1(0)
 
         if not self.s2dead and not self.enhance:
-            for i in range(2, self.s2size + 1):
+            for i in range(2, self.s2size):
                 if h2x[1] == h2x[i] and h2y[1] == h2y[i]:
                     self.s2dead = True
                     self.clear2(0)
@@ -429,7 +473,7 @@ class Game:
             self.clear2(0)
 
         if not self.s1dead and not self.s2dead and not self.enhance:
-            for i in range(2, self.s1size + 1):          # snake 2 head hits snake 1 body
+            for i in range(2, self.s1size):          # snake 2 head hits snake 1 body
                 if h2x[1] == h1x[i] and h2y[1] == h1y[i]:
                     if self.colours == 0:                # red mode: snake 2 dies
                         self.s2dead = True
@@ -439,7 +483,7 @@ class Game:
                         self.clear1(i)
                         self.s1size = i
                     break
-            for i in range(2, self.s2size + 1):          # snake 1 head hits snake 2 body
+            for i in range(2, self.s2size):          # snake 1 head hits snake 2 body
                 if h1x[1] == h2x[i] and h1y[1] == h2y[i]:
                     self.clear2(i)
                     self.s2size = i
@@ -712,11 +756,11 @@ class Game:
                 self.popup = ("How to pass?", msg)
 
     def menu_key(self, key):
-        sizes = [len(MODES), len(AI_LEVELS), len(WIN_OPTIONS), len(MATCH_OPTIONS)]
+        sizes = [len(MODES), len(AI_LEVELS), len(WIN_OPTIONS), len(MATCH_OPTIONS), len(BOARDS)]
         if key in (pygame.K_UP, pygame.K_w):
-            self.menu_sel = (self.menu_sel - 1) % 4
+            self.menu_sel = (self.menu_sel - 1) % len(sizes)
         elif key in (pygame.K_DOWN, pygame.K_s):
-            self.menu_sel = (self.menu_sel + 1) % 4
+            self.menu_sel = (self.menu_sel + 1) % len(sizes)
         elif key in (pygame.K_LEFT, pygame.K_a):
             self.sel[self.menu_sel] = (self.sel[self.menu_sel] - 1) % sizes[self.menu_sel]
         elif key in (pygame.K_RIGHT, pygame.K_d):
@@ -754,8 +798,7 @@ class Game:
                 self.restart()                       # next round
             return
         if key == pygame.K_ESCAPE:
-            self.in_menu = True
-            self.paused = False
+            self.enter_menu()
             return
         if key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
             if not (self.stopgame and self.passed == 4):
@@ -884,16 +927,19 @@ class Game:
             self.text(label, 10, WHITE if active else (170, 175, 185), r.centerx, r.centery)
 
     def draw_abilities(self):
+        top_y, bot_y = HEIGHT // 4, HEIGHT * 5 // 8      # centres of the two score labels
         if not self.s2dead:                              # Snake 1 (WASD), top block
-            self.cd_bar(200, "F  Freeze", self.cd_freeze, FREEZE_CD)
-            self.cd_bar(215, "L  Lollies", self.cd_lolly, LOLLY_CD)
-            self.cd_bar(230, "R  Reverse", self.cd_reverse, REVERSE_CD)
-            self.draw_bar(245, "G  Ghost", self.energy / ENERGY_MAX, GOLD)
-            self.draw_bar(260, "O  Orange", self.orange_energy / ORANGE_MAX, (255, 165, 0))
+            y = top_y + 40
+            self.cd_bar(y, "F  Freeze", self.cd_freeze, FREEZE_CD)
+            self.cd_bar(y + 15, "L  Lollies", self.cd_lolly, LOLLY_CD)
+            self.cd_bar(y + 30, "R  Reverse", self.cd_reverse, REVERSE_CD)
+            self.draw_bar(y + 45, "G  Ghost", self.energy / ENERGY_MAX, GOLD)
+            self.draw_bar(y + 60, "O  Orange", self.orange_energy / ORANGE_MAX, (255, 165, 0))
         if not self.s1dead:                              # Snake 2 (arrows), bottom block
-            self.cd_bar(435, "M  Magnet", self.cd_magnet, MAGNET_CD)
-            self.cd_bar(450, "I  Ice", self.cd_ice, ICE_CD)
-            self.draw_modes(468)
+            y = bot_y + 35
+            self.cd_bar(y, "M  Magnet", self.cd_magnet, MAGNET_CD)
+            self.cd_bar(y + 15, "I  Ice", self.cd_ice, ICE_CD)
+            self.draw_modes(y + 33)
 
     def draw_panel(self):
         pygame.draw.rect(self.screen, PANEL_BG, (0, 0, PANEL_W, HEIGHT))
@@ -909,14 +955,15 @@ class Game:
             self.text("SNAKE 2", 9, snake2_col, 124, 56)
             self.text(f"first to {need}", 10, SOFT, mid, 72)
         self.text(str(self.time // FPS), 15, (0, 255, 0), mid, 100)
+        top_y, bot_y = HEIGHT // 4, HEIGHT * 5 // 8
         if self.ai[2]:
-            self.text("computer", 11, SOFT, mid, 122)
+            self.text("computer", 11, SOFT, mid, top_y - 38)
         if self.ai[1]:
-            self.text("computer", 11, SOFT, mid, 362)
-        self.text(f"snake 1\n{self.s2size - 1}", 25, LIME, mid, HEIGHT // 4)
-        self.text(f"snake 2\n{self.s1size - 1}", 25, LIME, mid, HEIGHT * 5 // 8)
+            self.text("computer", 11, SOFT, mid, bot_y - 38)
+        self.text(f"snake 1\n{self.s2size - 1}", 25, LIME, mid, top_y)
+        self.text(f"snake 2\n{self.s1size - 1}", 25, LIME, mid, bot_y)
         if self.s1size - 1 == 7 and self.s2size - 1 == 7:
-            self.text("Congratulations on\nyour special day!", 12, LIME, mid, 136)
+            self.text("Congratulations on\nyour special day!", 12, LIME, mid, top_y - 24)
         self.draw_abilities()
 
         rect = self.aim_button
@@ -1041,20 +1088,22 @@ class Game:
         if self.best_time is not None:
             self.text(f"Best single-game time: {self.best_time} s", 13, SOFT, WIDTH // 2, 90)
 
-        mode, lvl, win, match = self.sel
+        mode, lvl, win, match, board = self.sel
+        bname, bcols, brows = BOARDS[board]
         rows = [("Mode", MODES[mode]),
                 ("Computer level", AI_LEVELS[lvl]),
                 ("Apples to win", str(WIN_OPTIONS[win])),
-                ("Match", MATCH_OPTIONS[match][0])]
+                ("Match", MATCH_OPTIONS[match][0]),
+                ("Board", f"{bname}  ({bcols - 7} x {brows - 2} squares)")]
         for i, (label, val) in enumerate(rows):
-            y = 122 + i * 40
+            y = 116 + i * 37
             selected = i == self.menu_sel
             greyed = i == 1 and mode == 0
             if selected:
-                pygame.draw.rect(self.screen, (52, 62, 84), (36, y - 18, 568, 36), border_radius=8)
+                pygame.draw.rect(self.screen, (52, 62, 84), (36, y - 17, 568, 34), border_radius=8)
             self.text_left(label, 22, (120, 125, 135) if greyed else WHITE, 56, y)
             vcol = (120, 125, 135) if greyed else (LIME if selected else SOFT)
-            self.text_left(f"<  {val}  >" if selected else f"    {val}", 22, vcol, 250, y)
+            self.text_left(f"<  {val}  >" if selected else f"    {val}", 20, vcol, 240, y)
 
         if MATCH_OPTIONS[match][1] > 1:
             hint = [f"Versus: first snake to {WIN_OPTIONS[win]} apples wins the round.",
@@ -1062,12 +1111,12 @@ class Game:
         else:
             hint = [f"Co-op: BOTH snakes must reach {WIN_OPTIONS[win]} apples to pass.",
                     "Both snakes crash = game over."]
-        self.text(hint, 14, SOFT, WIDTH // 2, 300)
+        self.text(hint, 14, SOFT, WIDTH // 2, 314)
 
         cols = [
             (30, "SNAKE 1  -  W A S D" + ("  (computer)" if mode == 2 else ""), PINK,
              [("W A S D", "steer"),
-              ("F", "Freeze snake 2"),
+              ("F", "Freeze snake 2 for 4 s (15 s CD)"),
               ("L", "Lollies around the apple"),
               ("R", "Reverse your snake"),
               ("H", "(hold) invisible"),
@@ -1082,9 +1131,9 @@ class Game:
               ("3", "blue: fast")]),
         ]
         for x, head, col, items in cols:
-            self.text_left(head, 16, col, x, 352)
+            self.text_left(head, 16, col, x, 360)
             for k, (key, desc) in enumerate(items):
-                y = 384 + k * 21
+                y = 390 + k * 21
                 self.text_left(key, 14, LIME, x, y)
                 self.text_left(desc, 13, SOFT, x + 72, y)
 
