@@ -10,7 +10,7 @@ how many apples win a round, and the match length (single game / best of 3 / 5).
 
 Snake 1  (W A S D, left side of the keyboard)
     W A S D ...... steer
-    F ............ Freeze snake 2 for 3 s (long!)         (15 s cooldown)
+    F ............ Freeze snake 2 for 4 s (long!)         (15 s cooldown)
     L ............ ring of 8 lollies round the apple      (10 s cooldown)
     R ............ Reverse snake 1                       (12 s cooldown)
     H (hold) ..... invisible
@@ -25,7 +25,7 @@ Snake 2  (arrow keys, right side of the keyboard)
     1 / 2 / 3 .... speed mode:  1 = red, 3/4 speed but DEADLY (snake 1 dies if it
                          touches you, body or head-on)
                          2 = purple, normal (default)
-                         3 = blue, fast (4 s boost bar, refills in about 10 s)
+                         3 = blue, fast (3 s boost bar, refills in about 15 s)
 
 A frozen snake's head can't be run into: the other snake simply can't enter that square.
 
@@ -54,7 +54,7 @@ MAX_LEN = 2500
 FIELD_CX = (PANEL_W + WIDTH) // 2     # horizontal centre of the playfield
 
 # special-move balancing (frames)
-FREEZE_DUR = 3 * FPS          # Freeze (F) holds snake 2 for 3 s ...
+FREEZE_DUR = 4 * FPS          # Freeze (F) holds snake 2 for 4 s ...
 FREEZE_CD = 15 * FPS          # ... but takes 15 s to recharge (Ice: 1.6 s / 6 s)
 LOLLY_CD = 10 * FPS
 REVERSE_CD = 12 * FPS
@@ -68,9 +68,9 @@ ENERGY_REGEN = 0.5
 ORANGE_MAX = 5 * FPS          # apple disguise
 ORANGE_MIN = FPS // 2
 ORANGE_REGEN = 0.5
-BOOST_MAX = 4 * FPS           # blue (fast) mode: 4 s on a full bar ...
+BOOST_MAX = 3 * FPS           # blue (fast) mode: 3 s on a full bar ...
 BOOST_MIN = FPS               # ... need 1 s of charge to switch it on ...
-BOOST_REGEN = BOOST_MAX / (10 * FPS)    # ... and about 10 s to refill
+BOOST_REGEN = BOOST_MAX / (15 * FPS)    # ... and about 15 s to refill
 MAX_QUEUED_TURNS = 2
 
 # board sizes (columns x rows of squares, including the scoreboard panel and walls)
@@ -1133,7 +1133,7 @@ class Game:
         cols = [
             (30, "SNAKE 1  -  W A S D" + ("  (computer)" if mode == 2 else ""), PINK,
              [("W A S D", "steer"),
-              ("F", "Freeze snake 2 for 3 s (15 s CD)"),
+              ("F", "Freeze snake 2 for 4 s (15 s CD)"),
               ("L", "Lollies around the apple"),
               ("R", "Reverse your snake"),
               ("H", "(hold) invisible"),
@@ -1145,7 +1145,7 @@ class Game:
               ("I", "Ice: freeze snake 1 for a moment"),
               ("1", "red: 3/4 speed but deadly"),
               ("2", "purple: normal speed"),
-              ("3", "blue: fast (4 s boost bar)")]),
+              ("3", "blue: fast (3 s boost bar)")]),
         ]
         for x, head, col, items in cols:
             self.text_left(head, 16, col, x, 360)
