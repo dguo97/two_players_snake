@@ -10,9 +10,9 @@ how many apples win a round, and the match length (single game / best of 3 / 5).
 
 Snake 1  (W A S D, left side of the keyboard)
     W A S D ...... steer
-    F ............ Freeze snake 2 for 4 s (long!)         (15 s cooldown)
+    F ............ Freeze snake 2 for 3 s (long!)         (15 s cooldown)
     L ............ ring of 8 lollies round the apple      (10 s cooldown)
-    R ............ Reverse snake 1                       (3 s cooldown)
+    R ............ Reverse snake 1                       (12 s cooldown)
     H (hold) ..... invisible
     O (hold) ..... apple looks like an orange            (5 s energy bar)
     G (hold) ..... ghost mode: pass through walls and bodies, nothing can hurt you
@@ -22,9 +22,10 @@ Snake 2  (arrow keys, right side of the keyboard)
     Arrows ....... steer
     M ............ Magnet: pull the apple up to 3 squares towards you   (8 s cooldown)
     I ............ Ice: freeze snake 1 for about 1.6 s                 (6 s cooldown)
-    1 / 2 / 3 .... speed mode:  1 = red, slow but DEADLY (snake 1 dies if it
+    1 / 2 / 3 .... speed mode:  1 = red, 3/4 speed but DEADLY (snake 1 dies if it
                          touches you, body or head-on)
-                         2 = purple, normal (default)    3 = blue, fast
+                         2 = purple, normal (default)
+                         3 = blue, fast (4 s boost bar, refills in about 10 s)
 
 A frozen snake's head can't be run into: the other snake simply can't enter that square.
 
@@ -53,10 +54,10 @@ MAX_LEN = 2500
 FIELD_CX = (PANEL_W + WIDTH) // 2     # horizontal centre of the playfield
 
 # special-move balancing (frames)
-FREEZE_DUR = 4 * FPS          # Freeze (F) holds snake 2 for 4 s ...
+FREEZE_DUR = 3 * FPS          # Freeze (F) holds snake 2 for 3 s ...
 FREEZE_CD = 15 * FPS          # ... but takes 15 s to recharge (Ice: 1.6 s / 6 s)
 LOLLY_CD = 10 * FPS
-REVERSE_CD = 3 * FPS
+REVERSE_CD = 12 * FPS
 MAGNET_CD = 8 * FPS
 MAGNET_CELLS = 3
 ICE_DUR = 96                  # frames snake 2 stays frozen by Ice
@@ -67,6 +68,9 @@ ENERGY_REGEN = 0.5
 ORANGE_MAX = 5 * FPS          # apple disguise
 ORANGE_MIN = FPS // 2
 ORANGE_REGEN = 0.5
+BOOST_MAX = 4 * FPS           # blue (fast) mode: 4 s on a full bar ...
+BOOST_MIN = FPS               # ... need 1 s of charge to switch it on ...
+BOOST_REGEN = BOOST_MAX / (10 * FPS)    # ... and about 10 s to refill
 MAX_QUEUED_TURNS = 2
 
 # board sizes (columns x rows of squares, including the scoreboard panel and walls)
@@ -243,6 +247,7 @@ class Game:
         self.cd_magnet = self.cd_ice = 0
         self.energy = ENERGY_MAX
         self.orange_energy = ORANGE_MAX
+        self.boost_energy = BOOST_MAX
         self.turns1, self.turns2 = [], []   # buffered direction changes
 
         self.colours = 2             # snake 1 mode: 0 = '3', 1 = '1', 2 = '6'
@@ -326,6 +331,13 @@ class Game:
                 self.colorL = PINK
         else:
             self.energy = min(ENERGY_MAX, self.energy + ENERGY_REGEN)
+        if self.colours == 1:                    # blue mode drains the boost bar
+            self.boost_energy -= 1
+            if self.boost_energy <= 0:           # out of boost: back to normal speed
+                self.boost_energy = 0
+                self.colours, self.colorR = 2, PURPLE
+        else:
+            self.boost_energy = min(BOOST_MAX, self.boost_energy + BOOST_REGEN)
         if self.orange:
             self.orange_energy -= 1
             if self.orange_energy <= 0:          # disguise runs out
@@ -336,7 +348,7 @@ class Game:
 
     def speed_adjust(self):
         if self.colours == 0:
-            self.speed, self.speed1, self.speed2 = 12, 8, 3
+            self.speed, self.speed1, self.speed2 = 4, 16, 3
         elif self.colours == 1:
             self.speed, self.speed1, self.speed2 = 4, 8, 3
         else:
@@ -707,6 +719,10 @@ class Game:
             elif random.random() < 0.3:
                 self.use_lollies()
         if self.ai[1] and not self.s1dead:
+            if self.colours != 1 and self.boost_energy >= BOOST_MIN * 2 and d1 >= 4:
+                self.colours, self.colorR = 1, BLUE_MODE      # sprint towards a far-away apple
+            elif self.colours == 1 and d1 <= 1:
+                self.colours, self.colorR = 2, PURPLE         # save the boost once it's close
             if d1 >= 4 and (d2 > d1 or random.random() < 0.3):
                 self.use_magnet()
             if d2 <= 4 and d1 > d2:
@@ -829,7 +845,7 @@ class Game:
                 self.colorR, self.colours = RED_MODE, 0
             if key == pygame.K_2:
                 self.colorR, self.colours = PURPLE, 2
-            if key == pygame.K_3:
+            if key == pygame.K_3 and self.boost_energy >= BOOST_MIN:
                 self.colorR, self.colours = BLUE_MODE, 1
 
         # ---- snake 2 (WASD)
@@ -940,6 +956,7 @@ class Game:
             self.cd_bar(y, "M  Magnet", self.cd_magnet, MAGNET_CD)
             self.cd_bar(y + 15, "I  Ice", self.cd_ice, ICE_CD)
             self.draw_modes(y + 33)
+            self.draw_bar(y + 54, "3  Boost", self.boost_energy / BOOST_MAX, BLUE_MODE)
 
     def draw_panel(self):
         pygame.draw.rect(self.screen, PANEL_BG, (0, 0, PANEL_W, HEIGHT))
@@ -1116,7 +1133,7 @@ class Game:
         cols = [
             (30, "SNAKE 1  -  W A S D" + ("  (computer)" if mode == 2 else ""), PINK,
              [("W A S D", "steer"),
-              ("F", "Freeze snake 2 for 4 s (15 s CD)"),
+              ("F", "Freeze snake 2 for 3 s (15 s CD)"),
               ("L", "Lollies around the apple"),
               ("R", "Reverse your snake"),
               ("H", "(hold) invisible"),
@@ -1126,9 +1143,9 @@ class Game:
              [("Arrows", "steer"),
               ("M", "Magnet: pull the apple closer"),
               ("I", "Ice: freeze snake 1 for a moment"),
-              ("1", "red: slow but deadly"),
+              ("1", "red: 3/4 speed but deadly"),
               ("2", "purple: normal speed"),
-              ("3", "blue: fast")]),
+              ("3", "blue: fast (4 s boost bar)")]),
         ]
         for x, head, col, items in cols:
             self.text_left(head, 16, col, x, 360)
