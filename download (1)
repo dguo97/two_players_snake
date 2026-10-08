@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# written by the game (best single-game time)
+shortest_time.txt
+
+# editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Two Player Snake  --  Python / pygame port of two_players_snake.pde
+Two Player Snake
 
 Setup:   pip install pygame
-Run:     python two_players_snake.py      (keep lolly.jpg in the same folder)
+Run:     python main.py      (keep lolly.jpg in the same folder)
 
 A start menu lets you pick the mode (2 players or vs the computer), the AI level,
 how many apples win a round, and the match length (single game / best of 3 / 5).
@@ -34,7 +34,7 @@ A frozen snake's head can't be run into: the other snake simply can't enter that
 P pause (also pauses if the window loses focus)   Shift restart   Esc menu
 
 Rules
-    Single game .. original co-op rules: BOTH snakes must reach the apple target.
+    Single game .. co-op rules: BOTH snakes must reach the apple target.
     Best of 3/5 .. versus: first snake to reach the target wins the round, a crash
                    loses it. Head-on = longer snake wins.
 Turns are buffered: two quick direction presses within one step are both used.
@@ -111,11 +111,11 @@ PANEL_BG = (26, 30, 38)
 MENU_BG = (22, 26, 34)
 SOFT = (200, 205, 215)
 
-# NOTE: inside the code "snake 1" is still the arrow-key snake (purple) and "snake 2" the
-# WASD snake (pink), as in the original sketch. On screen they are shown the other way
+# NOTE: inside the code "snake 1" is the arrow-key snake (purple) and "snake 2" the
+# WASD snake (pink). On screen they are shown the other way
 # round (Snake 1 = left player on WASD, Snake 2 = right player on the arrows), so every
 # player-facing label goes through Game.name() / the swapped panel below.
-# Processing used angles: 0 = right, 90 = up, 180 = left, 270 = down
+# Angles: 0 = right, 90 = up, 180 = left, 270 = down
 DIRS = {0: (1, 0), 90: (0, -1), 180: (-1, 0), 270: (0, 1)}
 
 JOHN_KEYS = {pygame.K_j, pygame.K_o, pygame.K_h, pygame.K_n,
@@ -268,7 +268,7 @@ class Game:
         self.colorL = GOLD if self.enhance else PINK
         self.speed, self.speed1, self.speed2 = 12, 4, 3
 
-        # Snake 1 (1-indexed arrays like the original; index 1 = head)
+        # Snake 1 (1-indexed arrays; index 1 = head)
         self.h1x = [0] * MAX_LEN
         self.h1y = [0] * MAX_LEN
         self.h1x[1] = WIDTH - 2 * SQ
@@ -319,7 +319,7 @@ class Game:
 
     # ---------------------------------------------------------- game logic
     def update(self):
-        """One display frame of game logic (the original draw() loop)."""
+        """One display frame of game logic."""
         self.time += 1
         self.tick_abilities()
         self.ai_abilities()
@@ -545,7 +545,7 @@ class Game:
         else:
             self.classic_end()
 
-    # ---- original co-op ending ------------------------------------------
+    # ---- single-game (co-op) ending -------------------------------------
     def classic_end(self):
         h1x, h1y, h2x, h2y = self.h1x, self.h1y, self.h2x, self.h2y
         if self.s1dead and self.s2dead:
@@ -976,7 +976,7 @@ class Game:
 
     def draw_snake(self, hx, hy, size, body_colour, frozen=False):
         # indices 1..size-1 are visible; index `size` is the vacated tail cell.
-        # (0, 0) is the "no segment yet" marker used by the original.
+        # (0, 0) marks a segment that does not exist yet.
         for i in range(size - 1, 0, -1):
             x, y = hx[i], hy[i]
             if (x, y) == (0, 0):
@@ -1243,7 +1243,7 @@ class Game:
             elif self.stopgame:
                 self.draw_game_over()
 
-        # easter eggs from the original
+        # hidden extras
         if JOHN_KEYS <= self.john_seen:
             self.text(["John 3:16",
                        "For God so loved the world that he gave his one and only Son,",
