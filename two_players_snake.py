@@ -76,12 +76,13 @@ BOOST_REGEN = BOOST_MAX / (15 * FPS)    # ... and about 15 s to refill
 MAX_QUEUED_TURNS = 2
 
 # computer player's biting, per level (Easy, Normal, Hard)
-AI_BITE_NEED = (99, 8, 7)         # only bite if it cuts at least this many segments off
-AI_BITE_WEIGHT = (0.0, 0.4, 0.6)  # how much it prefers a bite over heading for the apple
-AI_BITE_WAIT = (0, 200, 160)      # moves to wait after a bite before biting again
-AI_BITE_LEADER_ONLY = True        # only bite a snake that is longer than itself (a comeback move)
-# (Bites are brutal - they cut the victim in two - so a computer that bit freely made both
-#  snakes cut each other down forever. These numbers give a few bites per round.)
+AI_BITE_NEED = (99, 4, 3)         # only bite if it cuts at least this many segments off (Easy: never)
+AI_BITE_WEIGHT = (0.0, 0.7, 0.85) # how much it prefers a bite over heading for the apple
+AI_BITE_WAIT = (0, 40, 28)        # moves to wait after a bite before biting again
+AI_HUNT_RADIUS = (0, 4, 6)        # squares: it steers towards a juicy bite this close
+AI_BITE_LEADER_ONLY = False       # True = only bite a snake that is longer than itself
+# (A bitten-off part turns into red apples, so snakes recover quickly and biting no longer
+#  causes endless fights. Turn the numbers down for a gentler computer.)
 
 # board sizes (columns x rows of squares, including the scoreboard panel and walls)
 BOARDS = [("Classic", 20, 20), ("Large", 28, 22), ("Extra large", 32, 24)]
@@ -732,9 +733,10 @@ class Game:
         if self.larger:
             targets += [c for i, c in enumerate(self.ring_cells())
                         if self.ring[i] and self.in_field(*c)]
-        if lvl == 2:                                    # Hard also hunts nearby big bites
+        if AI_HUNT_RADIUS[lvl]:                         # go hunting for a nearby juicy bite
             targets += [c for c, loss in bites.items()
-                        if loss >= AI_BITE_NEED[lvl] + 2 and abs(c[0] - head[0]) + abs(c[1] - head[1]) <= 3 * SQ]
+                        if loss >= AI_BITE_NEED[lvl] + 1
+                        and abs(c[0] - head[0]) + abs(c[1] - head[1]) <= AI_HUNT_RADIUS[lvl] * SQ]
         tx, ty = min(targets, key=lambda t: abs(t[0] - head[0]) + abs(t[1] - head[1]))
 
         def score(opt):
