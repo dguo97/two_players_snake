@@ -27,6 +27,8 @@ Snake 2  (arrow keys, right side of the keyboard)
                          2 = purple, normal (default)
                          3 = blue, fast (3 s boost bar, refills in about 15 s)
 
+A bite cuts the victim in two: the cut-off part turns into red apples that either snake can
+eat (+1 length each; the biter gets the one under its head straight away).
 A frozen snake's head can't be run into: the other snake simply can't enter that square.
 
 P pause (also pauses if the window loses focus)   Shift restart   Esc menu
@@ -72,6 +74,14 @@ BOOST_MAX = 3 * FPS           # blue (fast) mode: 3 s on a full bar ...
 BOOST_MIN = FPS               # ... need 1 s of charge to switch it on ...
 BOOST_REGEN = BOOST_MAX / (15 * FPS)    # ... and about 15 s to refill
 MAX_QUEUED_TURNS = 2
+
+# computer player's biting, per level (Easy, Normal, Hard)
+AI_BITE_NEED = (99, 8, 7)         # only bite if it cuts at least this many segments off
+AI_BITE_WEIGHT = (0.0, 0.4, 0.6)  # how much it prefers a bite over heading for the apple
+AI_BITE_WAIT = (0, 200, 160)      # moves to wait after a bite before biting again
+AI_BITE_LEADER_ONLY = True        # only bite a snake that is longer than itself (a comeback move)
+# (Bites are brutal - they cut the victim in two - so a computer that bit freely made both
+#  snakes cut each other down forever. These numbers give a few bites per round.)
 
 # board sizes (columns x rows of squares, including the scoreboard panel and walls)
 BOARDS = [("Classic", 20, 20), ("Large", 28, 22), ("Extra large", 32, 24)]
@@ -249,6 +259,8 @@ class Game:
         self.orange_energy = ORANGE_MAX
         self.boost_energy = BOOST_MAX
         self.turns1, self.turns2 = [], []   # buffered direction changes
+        self.bite_wait = {1: 0, 2: 0}        # computer: moves left before it may bite again
+        self.pieces = set()                  # red apples left by bitten-off snake parts
 
         self.colours = 2             # snake 1 mode: 0 = '3', 1 = '1', 2 = '6'
         self.colorR = PURPLE
@@ -287,6 +299,7 @@ class Game:
             blocked.update((self.h1x[i], self.h1y[i]) for i in range(1, self.s1size))
         if not self.s2dead:
             blocked.update((self.h2x[i], self.h2y[i]) for i in range(1, self.s2size))
+        blocked |= self.pieces
         free = [(c * SQ, r * SQ)
                 for c in range(PANEL_W // SQ + 1, COLS - 1)
                 for r in range(1, ROWS - 1)
@@ -315,6 +328,7 @@ class Game:
             self.travel()
             self.larger_step()
             self.eat_apple()
+            self.eat_pieces()
             self.check_dead()
 
     def tick_abilities(self):
@@ -440,6 +454,26 @@ class Game:
                 self.s2size += 1
             self.place_apple()
 
+    def spill(self, snake, i):
+        """A bite cut snake `snake` at index i: its visible segments i..size-1 drop off the
+        snake and become red apples lying on the board."""
+        hx, hy, size = (self.h1x, self.h1y, self.s1size) if snake == 1 else (self.h2x, self.h2y, self.s2size)
+        for k in range(i, size):
+            c = (hx[k], hy[k])
+            if c != (0, 0) and self.in_field(*c) and c != (self.applex, self.appley):
+                self.pieces.add(c)
+
+    def eat_pieces(self):
+        """A head on a red piece eats it: +1 length for whichever snake gets there."""
+        if not self.pieces:
+            return
+        if not self.s1dead and (self.h1x[1], self.h1y[1]) in self.pieces:
+            self.pieces.discard((self.h1x[1], self.h1y[1]))
+            self.s1size += 1
+        if not self.s2dead and (self.h2x[1], self.h2y[1]) in self.pieces:
+            self.pieces.discard((self.h2x[1], self.h2y[1]))
+            self.s2size += 1
+
     def clear1(self, newend):
         for i in range(self.s1size, newend, -1):
             self.h1x[i] = 0
@@ -492,13 +526,17 @@ class Game:
                         self.red_kill = True
                         self.clear2(0)
                     else:
+                        self.spill(1, i)
                         self.clear1(i)
                         self.s1size = i
+                        self.eat_pieces()                # the biter eats the piece under its head
                     break
             for i in range(2, self.s2size):          # snake 1 head hits snake 2 body
                 if h1x[1] == h2x[i] and h1y[1] == h2y[i]:
+                    self.spill(2, i)
                     self.clear2(i)
                     self.s2size = i
+                    self.eat_pieces()                    # the biter eats the piece under its head
                     break
 
         if self.match_len > 1:
@@ -650,15 +688,35 @@ class Game:
         hx, hy, size, cur = ((self.h1x, self.h1y, self.s1size, self.angle1) if snake == 1
                              else (self.h2x, self.h2y, self.s2size, self.angle2))
         head = (hx[1], hy[1])
-        blocked = set(self.snake_cells(1)) | set(self.snake_cells(2))
-        if (self.s1dead and snake == 2) or (self.s2dead and snake == 1):
-            blocked = set(self.snake_cells(snake))
+        lvl = self.ai_level
+        self.bite_wait[snake] = max(0, self.bite_wait[snake] - 1)
+        enemy = 2 if snake == 1 else 1
+        enemy_dead = self.s2dead if snake == 1 else self.s1dead
+        own = set(self.snake_cells(snake))
+        blocked = own | (set() if enemy_dead else set(self.snake_cells(enemy)))
+
+        # Enemy body squares worth biting: a bite cuts the victim's snake in two, so the
+        # nearer to its head, the more it loses. (Easy never bites.)
+        bites = {}
+        can_bite = (lvl > 0 and not enemy_dead and not self.enhance          # ghosts can't be bitten
+                    and self.bite_wait[snake] == 0
+                    and not (snake == 2 and self.colours == 0))              # red snakes kill biters
+        if can_bite:
+            ehx, ehy, esize = ((self.h1x, self.h1y, self.s1size) if enemy == 1
+                               else (self.h2x, self.h2y, self.s2size))
+            need = AI_BITE_NEED[lvl]
+            if AI_BITE_LEADER_ONLY and esize <= size:     # don't bite a snake that isn't ahead
+                need = 10 ** 6
+            for i in range(2, esize):
+                c = (ehx[i], ehy[i])
+                if c != (0, 0) and esize - i >= need:
+                    bites[c] = esize - i
 
         options = []
         for a in (cur, (cur + 90) % 360, (cur + 270) % 360):
             dx, dy = DIRS[a]
             c = (head[0] + dx * SQ, head[1] + dy * SQ)
-            if self.in_field(*c) and c not in blocked:
+            if self.in_field(*c) and (c not in blocked or (c in bites and c not in own)):
                 options.append((a, c))
 
         if not options:
@@ -666,20 +724,23 @@ class Game:
                 return
             return                                       # nothing to do, keep going
 
-        lvl = self.ai_level
         if random.random() < (0.22, 0.05, 0.0)[lvl]:
             self.set_angle(snake, random.choice(options)[0])
             return
 
-        targets = [(self.applex, self.appley)]
+        targets = [(self.applex, self.appley)] + list(self.pieces)
         if self.larger:
             targets += [c for i, c in enumerate(self.ring_cells())
                         if self.ring[i] and self.in_field(*c)]
+        if lvl == 2:                                    # Hard also hunts nearby big bites
+            targets += [c for c, loss in bites.items()
+                        if loss >= AI_BITE_NEED[lvl] + 2 and abs(c[0] - head[0]) + abs(c[1] - head[1]) <= 3 * SQ]
         tx, ty = min(targets, key=lambda t: abs(t[0] - head[0]) + abs(t[1] - head[1]))
 
         def score(opt):
             a, c = opt
             s = (abs(c[0] - tx) + abs(c[1] - ty)) / SQ - (0.4 if a == cur else 0)
+            s -= bites.get(c, 0) * AI_BITE_WEIGHT[lvl]   # take the bite
             if lvl == 1:
                 exits = sum(1 for dx, dy in DIRS.values()
                             if self.in_field(c[0] + dx * SQ, c[1] + dy * SQ)
@@ -692,7 +753,10 @@ class Game:
                     s += (size + 8 - area) * 3
             return s
 
-        self.set_angle(snake, min(options, key=score)[0])
+        best = min(options, key=score)
+        if best[1] in bites:
+            self.bite_wait[snake] = AI_BITE_WAIT[lvl]
+        self.set_angle(snake, best[0])
 
     def set_angle(self, snake, angle):
         if snake == 1:
@@ -991,6 +1055,10 @@ class Game:
     def draw_board(self):
         self.screen.fill(WHITE)
         self.draw_panel()
+
+        # red apples left by bites
+        for x, y in self.pieces:
+            self.cell(x, y, (255, 0, 0), BLACK)
 
         # apple
         if not self.orange:
