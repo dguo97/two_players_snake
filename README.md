@@ -4,11 +4,11 @@ A two-player snake game for the keyboard, written in Python with [pygame](https:
 Two snakes share one board and fight for the apples, with special moves, a computer opponent
 and best-of-3 / best-of-5 matches.
 
-![Start menu](screenshots/menu.png)
+![Start menu](menu.png)
 
-![Gameplay](screenshots/gameplay.png)
+![Gameplay](gameplay.png)
 
-![Round over](screenshots/round_over.png)
+![Round over](round_over.png)
 
 ## Features
 
@@ -117,7 +117,7 @@ constants near the top of `main.py` if you want to tweak them (`FREEZE_DUR`, `RE
 main.py            the whole game
 lolly.jpg          the lolly picture
 requirements.txt   Python dependency (pygame)
-screenshots/       images used in this README
+menu.png, gameplay.png, round_over.png   screenshots used in this README
 ```
 
 The best single-game time is written to `shortest_time.txt` next to `main.py` (ignored by git).
