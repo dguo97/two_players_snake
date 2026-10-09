@@ -3,7 +3,7 @@
 Two Player Snake
 
 Setup:   pip install pygame
-Run:     python main.py      (keep lolly.jpg in the same folder)
+Run:     python main.py
 
 A start menu lets you pick the mode (2 players or vs the computer), the AI level,
 how many apples win a round, and the match length (single game / best of 3 / 5).
@@ -163,15 +163,12 @@ class Game:
 
     # ------------------------------------------------------------ resources
     def _load_lolly(self):
-        try:
-            img = pygame.image.load(os.path.join(BASE_DIR, "lolly.jpg")).convert()
-            return pygame.transform.smoothscale(img, (SQ, SQ))
-        except (pygame.error, FileNotFoundError):
-            surf = pygame.Surface((SQ, SQ))
-            surf.fill(WHITE)
-            pygame.draw.rect(surf, (240, 150, 190), (8, 2, 16, 18), border_radius=6)
-            pygame.draw.rect(surf, (220, 190, 120), (14, 20, 4, 10))
-            return surf
+        """The lolly is drawn in code, so no image file is needed."""
+        surf = pygame.Surface((SQ, SQ))
+        surf.fill(WHITE)
+        pygame.draw.rect(surf, (240, 150, 190), (8, 2, 16, 18), border_radius=6)
+        pygame.draw.rect(surf, (220, 190, 120), (14, 20, 4, 10))
+        return surf
 
     def font(self, size):
         if size not in self._fonts:
