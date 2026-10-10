@@ -1,7 +1,7 @@
 # Two Player Snake
 
 A two-player snake game for the keyboard, written in Python with [pygame](https://www.pygame.org/).
-Two snakes share one board and fight for the apples, with special moves, a computer opponent
+Two snakes share one board and fight over the apples, with special moves, a computer opponent
 and best-of-3 / best-of-5 matches.
 
 ![Start menu](menu.png)
@@ -13,13 +13,13 @@ and best-of-3 / best-of-5 matches.
 ## Features
 
 - **Two players on one keyboard**, or play **against the computer** (Easy / Normal / Hard)
-- **Best of 3 / best of 5 matches**, or a single co-op game
+- **Best-of-3 / best-of-5 matches**, or a single co-op game
 - **Special moves** for both snakes: freeze, ice, magnet, lollies, reverse, ghost mode,
   invisibility, speed modes and more
-- **Biting:** run into the other snake's body and you cut it in two. The cut-off part turns into
+- **Biting:** run into the other snake's body and you cut it in two. The severed part turns into
   **red apples** that either snake can eat
 - **Three board sizes** (Classic, Large, Extra large)
-- Pause, restart, buffered turns (two quick key presses in one step both count), number-pad support
+- Pause, restart, buffered turns (two quick key presses within one step both count) and number-pad support
 
 ## Install and run
 
@@ -30,16 +30,16 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Keep `lolly.jpg` in the same folder as `main.py`. (The game still runs without it, and draws
+Keep `lolly.jpg` in the same folder as `main.py`. (The game still runs without it and draws
 a simple lolly instead.)
 
 ## How to play
 
-Pick your options in the start menu (Up/Down to choose, Left/Right to change, Enter to start).
+Choose your options in the start menu (Up/Down to select, Left/Right to change, Enter to start).
 
 | Setting | Options |
 |---|---|
-| Mode | 2 players, or vs computer (you play Snake 1 on WASD, or Snake 2 on the arrows) |
+| Mode | 2 players, or vs computer (you play Snake 1 on WASD, or Snake 2 on the arrow keys) |
 | Computer level | Easy, Normal, Hard |
 | Apples to win | 5 to 40 |
 | Match | Single game, Best of 3, Best of 5 |
@@ -51,15 +51,15 @@ The scoreboard shows each snake's length (a new snake starts at 2).
 
 - **Versus (best of 3 / 5):** the first snake to reach the target score wins the round. A snake
   that hits a wall or bites itself loses the round. If the two heads collide head-on, the longer
-  snake wins (equal length is a draw and the round is replayed). First to win the majority of
-  rounds wins the match.
-- **Single game (co-op):** *both* snakes must reach the target score to pass. If both crash it's
+  snake wins (if they are the same length, the round is a draw and is replayed). The first player to win
+  the majority of rounds wins the match.
+- **Single game (co-op):** *both* snakes must reach the target score to pass. If both crash, it's
   game over. The fastest winning time is saved.
 - **Biting:** if a snake's head runs into the other snake's visible body, the other snake is cut
-  at that point. The part that was cut off turns into red apples (+1 length each for whoever eats
-  them; the biter gets the one under its head straight away).
+  at that point. The severed part turns into red apples (+1 length for whoever eats
+  each one; the biter gets the one under its head straight away).
 - **Walls and your own body** are deadly. Only squares you can actually see are dangerous.
-- A **frozen snake's head can't be run into**: the other snake simply can't enter that square.
+- **A frozen snake's head can't be run into:** the other snake simply can't enter that square.
 
 ### Controls
 
@@ -69,11 +69,11 @@ The scoreboard shows each snake's length (a new snake starts at 2).
 |---|---|---|
 | `W A S D` | Steer | |
 | `F` | Freeze | Freezes Snake 2 for 4 s (15 s cooldown) |
-| `L` | Lollies | Ring of 8 lollies around the apple, each worth +1 length (10 s cooldown) |
-| `R` | Reverse | Turns your snake round, tail becomes head (12 s cooldown) |
-| `H` (hold) | Hide | Your snake turns invisible |
-| `O` (hold) | Orange | The apple looks like an orange (5 s energy bar) |
-| `G` (hold) | Ghost | Pass through walls and bodies, nothing can hurt you (6 s energy bar). If the energy runs out inside a wall, you crash |
+| `L` | Lollies | Places a ring of 8 lollies around the apple, each worth +1 length (10 s cooldown) |
+| `R` | Reverse | Turns your snake around, so the tail becomes the head (12 s cooldown) |
+| `H` (hold) | Hide | Makes your snake invisible |
+| `O` (hold) | Orange | Makes the apple look like an orange (5 s energy bar) |
+| `G` (hold) | Ghost | Pass through walls and bodies; nothing can hurt you (6 s energy bar). If the energy runs out inside a wall, you crash |
 
 **Snake 2: arrow keys** (purple)
 
@@ -88,9 +88,9 @@ The scoreboard shows each snake's length (a new snake starts at 2).
 
 The number-pad digits work as well as the top row.
 
-**Anytime:** `P` pause (the game also pauses if the window loses focus), `Shift` restart,
-`Esc` back to the menu, `Enter` for the next round or a rematch, and the on-screen **Aim**
-button tells you the target.
+**Anytime:** `P` pauses (the game also pauses if the window loses focus), `Shift` restarts,
+`Esc` returns to the menu, and `Enter` starts the next round or a rematch. The on-screen **Aim**
+button shows the target.
 
 ### The computer opponent
 
@@ -99,7 +99,7 @@ All three levels head for the apple, the lollies and any red apples lying around
 - **Easy** makes the odd random move, uses its special moves only occasionally, and never bites.
 - **Normal** also looks ahead to avoid dead ends, uses its special moves, and bites (and goes
   hunting for a bite nearby) when it can cut off a decent chunk.
-- **Hard** plans around free space so it rarely traps itself, uses its special moves all the time,
+- **Hard** plans around free space so it rarely traps itself, uses its special moves constantly,
   and hunts for bites from further away.
 
 The computer never bites a red snake (that would kill it) or a ghosting snake (nothing happens).
@@ -107,7 +107,7 @@ The computer never bites a red snake (that would kill it) or a ghosting snake (n
 ## Balance
 
 The numbers (cooldowns, durations, energy bars, speeds) were tuned with thousands of simulated
-computer-vs-computer rounds so neither snake has a big built-in advantage. They are plain
+computer-vs-computer rounds so that neither snake has a big built-in advantage. They are plain
 constants near the top of `main.py` if you want to tweak them (`FREEZE_DUR`, `REVERSE_CD`,
 `BOOST_MAX`, `AI_BITE_NEED`, ...).
 
@@ -124,12 +124,13 @@ The best single-game time is written to `shortest_time.txt` next to `main.py` (i
 
 ## Credits
 
-This game started as a Processing sketch (`two_players_snake.pde`) that I created when I was an
-undergraduate at Warwick. As a kid and a teenager I watched a lot of the Ultraman series, which is
-where I got some of the special moves from, as well as the idea of switching between different
-colours.
+This game started as a Processing sketch (`two_players_snake.pde`) that I created as an
+undergraduate at Warwick. It builds on classic snake, one of the few games found on almost every
+phone in the olden days, with a good dose of extra fun. As a kid and a teenager I watched a lot of
+the Ultraman series, which inspired some of the special moves, as well as the idea of switching
+between different colours.
 
-It was then rewritten in Python with pygame and extended with the menu, matches, computer
+It was later rewritten in Python with pygame and extended with the menu, matches, computer
 opponent, special moves and bigger boards.
 
 ## License
